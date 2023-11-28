@@ -97,6 +97,9 @@ def raw2outputs(raw, z_vals, rays_d):
 
     return rgb_map
 
+class NeighborFoundException(Exception):
+    pass 
+
 def find_nn(pts, ptscloud):
     """
     pts: points along the ray of size (M,3)
@@ -105,47 +108,45 @@ def find_nn(pts, ptscloud):
 
     :returns nn_index: the nearest index for every point in pts 
     """
-    nn_index = torch.tensor()
+    nn_index = []
     M = pts.shape[0] # no of sampled points along the ray 
-
+    N = 200
     try:
-        # 0. reshape CLOUD (i X j X k) ---> (i X j, k) s.t. we can iterate over it
-        # ptscloud_ = ptscloud.view(-1,pts.shape[0],3)
 
+        ptscloud = ptscloud.view(N,N,N,3)
         print(f"[INFO.find_nn]:\t {ptscloud.shape} ---> {ptscloud.shape}")
         print("--" * 70)
 
-        # for each ray k point        
-        for k in range(M):
             
-            # search cloud point (i X j) until distance << 0.02 (~ one neighbor away) 
-            for p in range(ptscloud.shape[0]):
+            # search cloud points until distance << (~ one neighbor away) 
+            # for each ray r point        
+        for r in range(M):
+            try:
+                for i in range(N):
+                    for j in range(N):
+                        for k in range(N):
+                            
+                            # 2. Find t_n (nearest n-th 3D point along ray)
+                            distance = abs(sum(torch.round(ptscloud[i,j,k] - pts[r])))
 
-                # 2. Find t_n (nearest n-th 3D point along ray)
-                distance = abs(round(ptscloud(p) - pts(k),3))
+                            # 3. stop when we found a close neighbor 
+                            if distance < 1e-3:
+                                raise NeighborFoundException()
 
-                # 3. stop when we found a close neighbor 
-                if distance < 0.02:
-                    break 
+            # 4. found a neighbor point 
+            except NeighborFoundException as e:
+                nn_index.append(torch.tensor([i,j,k]))
+                # print(f"[INFO.find_nn]:\t\t Found Neighbor [{i},{j},{k}] at distance {distance}")
 
-            # # 4. initialize closest neighbor
-            # closest_distance = float('inf')
-            # closest_neighbor = [()]     
-
-            # # 4. Check if point neighbor points are closer
-            # if distance < closest_distance:
-            #     distance = closest_distance
-            #     i = p // 200 % 200
-            #     j = p % 200
-            #     closest_neighbor = torch.tensor([i,j,k])
-
-            # print(f"[INFO.find_nn]:\t ")
-            # print("--" * 70)
-
+        # 5. return stack of indexes         
+        nn_index = torch.stack(nn_index,dim=0)
+        
+        print(f"[INFO.find_nn]:\t\t nn_index = {nn_index.shape}")    
+        print("--" * 70)
 
     except Exception as e:
         print("--" * 70)
-        print(f"[ERROR.find_nn]:\t {e}")
+        print(f"[ERROR.find_nn]:\t\t {e}")
         print("--" * 70)
 
     return nn_index.long()
@@ -175,7 +176,7 @@ def render_rays_discrete(ray_steps, rays_o, rays_d, N_samples, pt_cloud, rgb_val
     N = rays_o.shape[0]     # Number of rays
     rgb_val_rays = None
 
-    # 1. [Generating Rays]:                     r(t) = o + t*d --> shape(num_rays, no_samples, 3)
+    ####### 1. [Generating Rays]:                     r(t) = o + t*d --> shape(num_rays, no_samples, 3) ###############################################@@#####
     try:
         print("--" * 70)
         # 1.1 [Expand shape by repeating N times]    :  r(t),o(t):  (1024,3) --> (1024,N_samples,3) and t : (N_samples) --> (N_samples,3)
@@ -195,18 +196,20 @@ def render_rays_discrete(ray_steps, rays_o, rays_d, N_samples, pt_cloud, rgb_val
         print(f"[ERROR.render_rays_discrete]:\t Cannot Generate rays {e}")
         print("--" * 70)
 
-    # 2. [Find Nearest Neighbor]:   t <-- t_n (nearest) ∀ t ∈ rays R^n  
-
+    ######## 2. [Find Nearest Neighbor]:   t <-- t_n (nearest) ∀ t ∈ rays R^n ###################################################################################
+    pts_indices = []  
     for ray in range(N):
-        find_nn(pts[ray],pt_cloud)
-        break 
+        hihi = find_nn(pts[ray],pt_cloud)
+        pts_indices.append(hihi)
+        print(f"[INFO.render_rays_discrete]:\t Map rays to cloud ...  pts = {hihi.shape}")
+
+    raw = torch.stack(pts_indices)
+    print(f"[INFO.render_rays_discrete]:\t Map rays to cloud ...  pts = {raw.shape}")
     print("--" * 70)
 
-    # 3. [Render color]:            C(r) <-- ∫Tn (1-exp(-phi_n * delta_n)) * c_n 
-    # raw = None 
-    # z_vals = None 
-    # raw2outputs(raw,z_vals,rays_d)
-    # print("--" * 70)
+    ######## 3. [Render color]:            C(r) <-- ∫Tn (1-exp(-phi_n * delta_n)) * c_n ##########################################################################
+    rgb_val_rays = raw2outputs(raw,pts,rays_d)
+    print("--" * 70)
 
     return rgb_val_rays
 
