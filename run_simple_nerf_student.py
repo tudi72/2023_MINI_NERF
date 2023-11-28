@@ -110,26 +110,38 @@ def find_nn(pts, ptscloud):
 
     try:
         # 0. reshape CLOUD (i X j X k) ---> (i X j, k) s.t. we can iterate over it
-        ptscloud_ = ptscloud.view(-1,pts.shape[0],3)
+        # ptscloud_ = ptscloud.view(-1,pts.shape[0],3)
 
-        print(f"[INFO.find_nn]:\t {ptscloud.shape} ---> {ptscloud_.shape}")
+        print(f"[INFO.find_nn]:\t {ptscloud.shape} ---> {ptscloud.shape}")
         print("--" * 70)
 
-        # for each ray point        
-        for ray in range(M):
+        # for each ray k point        
+        for k in range(M):
             
-            # search cloud point (i X j) 
-            for p in range(M*M):
-                    
-                k = p % 200
-                i = ((p-k) // 200) % 200 
-                j = ((p-(k + i * 200)) // 200 // 200) % 200
+            # search cloud point (i X j) until distance << 0.02 (~ one neighbor away) 
+            for p in range(ptscloud.shape[0]):
 
                 # 2. Find t_n (nearest n-th 3D point along ray)
-                closest_ijk = float('inf')
-                print(f"[INFO.find_nn]:\t(i,j,k) = {i.shape,j.shape,k.shape} pts = {pts.shape} ptsCloud = {ptscloud.shape}")
-                print("--" * 70)
-            
+                distance = abs(round(ptscloud(p) - pts(k),3))
+
+                # 3. stop when we found a close neighbor 
+                if distance < 0.02:
+                    break 
+
+            # # 4. initialize closest neighbor
+            # closest_distance = float('inf')
+            # closest_neighbor = [()]     
+
+            # # 4. Check if point neighbor points are closer
+            # if distance < closest_distance:
+            #     distance = closest_distance
+            #     i = p // 200 % 200
+            #     j = p % 200
+            #     closest_neighbor = torch.tensor([i,j,k])
+
+            # print(f"[INFO.find_nn]:\t ")
+            # print("--" * 70)
+
 
     except Exception as e:
         print("--" * 70)
