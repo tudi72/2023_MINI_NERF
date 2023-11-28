@@ -82,7 +82,10 @@ def raw2outputs(raw, z_vals, rays_d):
     by weights we mean the all coefficients the multiplies the color \hat C(r) = \sum_{n=1}^{N} T_n (1-\exp(-\sigma_n\delta_n))c_n
     weights_n = T_n (1-\exp(-\sigma_n\delta_n))
     '''
-    weights = None # size of (num_rays, num_samples along ray). 
+    sigma_n = raw[:,3]
+    rgb = raw[:,:3]
+    T_n = 1.-tf.exp(-sigma_a * dists) 
+    weights = raw[:,4] * (1.0 - torch.exp(-sigma_n * z_vals)) # size of (num_rays, num_samples along ray). 
     rgb_map = None
     
     acc_map = torch.sum(weights, -1)
@@ -151,7 +154,7 @@ def find_nn(pts, ptscloud):
 
     return nn_index.long()
 
-def render_rays_discrete(ray_steps, rays_o, rays_d, N_samples, pt_cloud, rgb_val, sigma_val):
+def render_rays_discrete(ray_steps, rays_o, rays_d, N_samples, pt_cloud, rgb_val, sigma_val, T_n):
     """
     ray_steps: the scalar list of size (N_samples) of steps (see TODOs below)
     rays_o: origin of the rays of size (NX3) 
@@ -176,7 +179,7 @@ def render_rays_discrete(ray_steps, rays_o, rays_d, N_samples, pt_cloud, rgb_val
     N = rays_o.shape[0]     # Number of rays
     rgb_val_rays = None
 
-    ####### 1. [Generating Rays]:                     r(t) = o + t*d --> shape(num_rays, no_samples, 3) ###############################################@@#####
+    ####################################### 1. [Generating Rays]:  r(t) = o + t*d  ###########################################################################
     try:
         print("--" * 70)
         # 1.1 [Expand shape by repeating N times]    :  r(t),o(t):  (1024,3) --> (1024,N_samples,3) and t : (N_samples) --> (N_samples,3)
@@ -184,33 +187,38 @@ def render_rays_discrete(ray_steps, rays_o, rays_d, N_samples, pt_cloud, rgb_val
         rays_o = rays_o.unsqueeze(1).repeat(1,N_samples,1)
         ray_steps = ray_steps.repeat(3,1).transpose(0,1)
 
-        print(f"[INFO.render_rays_discrete]:\t Extend shape ... rays_0 {rays_o.shape}, rays_d {rays_d.shape} ray_steps {ray_steps.shape}")
+        pts = rays_o + ray_steps * rays_d
+
+        print(f"[INFO.render_rays_discrete.1]:\t Generate rays ...  pts = {pts.shape}")
         print("--" * 70)
 
-        # 1.2 [Map ray points]:                 r(t) = o + t * d 
-        pts = rays_o + ray_steps * rays_d
-        print(f"[INFO.render_rays_discrete]:\t Generate rays ...  pts = {pts.shape}")
-        print("--" * 70)
     except Exception as e:
         print("--" * 70)
-        print(f"[ERROR.render_rays_discrete]:\t Cannot Generate rays {e}")
+        print(f"[ERROR.render_rays_discrete.1]:\t Cannot Generate rays {e}")
         print("--" * 70)
 
-    ######## 2. [Find Nearest Neighbor]:   t <-- t_n (nearest) ∀ t ∈ rays R^n ###################################################################################
+    ####################################### 2. [Find Nearest Neighbor]:  t <-- t_n (nearest) ∀ t ∈ rays R^n #####################################################
     pts_indices = []  
     for ray in range(N):
         hihi = find_nn(pts[ray],pt_cloud)
         pts_indices.append(hihi)
-        print(f"[INFO.render_rays_discrete]:\t Map rays to cloud ...  pts = {hihi.shape}")
+        print(f"[INFO.render_rays_discrete.2]:\t Map rays to cloud ...  pts = {hihi.shape}")
+        break
 
-    raw = torch.stack(pts_indices)
-    print(f"[INFO.render_rays_discrete]:\t Map rays to cloud ...  pts = {raw.shape}")
+    pts_indices = torch.stack(pts_indices)
+    print(f"[INFO.render_rays_discrete.2]:\t Map rays to cloud ...  pts = {pts_indices.shape}")
     print("--" * 70)
 
-    ######## 3. [Render color]:            C(r) <-- ∫Tn (1-exp(-phi_n * delta_n)) * c_n ##########################################################################
-    rgb_val_rays = raw2outputs(raw,pts,rays_d)
-    print("--" * 70)
-
+    ###################################### 3. [Render color]: C(r) <-- ∫Tn (1-exp(-phi_n * delta_n)) * c_n #######################################################
+    try:
+        z_vals = ray_steps
+        raw = torch.stack(rgb_val,sigma_val)
+        print(f"[INFO.render_rays_discrete]:\t Raw  ...  raw = {raw.shape}, z_vals={z_vals.shape}")
+        rgb_val_rays = raw2outputs(raw,z_vals,rays_d)
+        print("--" * 70)
+    except Exception as e:
+        print(f"[ERROR.render_rays_discrete.3]: {e}")
+        print("--" * 70)
     return rgb_val_rays
 
 def regularize_rgb_sigma(point_cloud, rgb_values, sigma_values):
@@ -336,14 +344,33 @@ def train():
 
             t_vals = torch.linspace(0., 1., steps=N_samples)
             z_vals = near * (1.-t_vals) + far * (t_vals)
-            # 3. TODO: implement steps t_n, compute error 
+            # 3. TODO: implement steps t_n, compute error
+            
+            # steps δ_n = δ_n+1 = δ_n)
+            print("="*70)
+            print("sigma_n" ,sigma_val.shape)
+            print("="*70)
+
+            delta_n = z_vals[1:] - z_vals[:-1]
+            delta_n = delta_n.repeat(sigma_val.shape[0],1)
+
+            print("="*70)
+            print("delta_n" ,delta_n.shape)
+            print("="*70)
+
+            # steps T_n = exp(-Σσ_n * δ_n)
+            T_n =  torch.exp(-torch.sum(sigma_val * delta_n)) 
+            print(delta_n.shape)
+            print("="*70)
+            
             rgb_map = render_rays_discrete(ray_steps = z_vals,
                                            rays_o = rays_o,
                                            rays_d = rays_d,
                                            N_samples = N_samples,
                                            pt_cloud = pt_cloud,
                                            rgb_val = rgb_val,
-                                           sigma_val = sigma_val) # CHANGE THIS
+                                           sigma_val = sigma_val,
+                                           T_n = T_n,) # T_n = distance between adjacent samples
             print("--" * 70)
             print(f"[INFO.train]: rgb_map = {rgb_map.shape}, target_s = {target_s.shape}")
             print("--" * 70)
