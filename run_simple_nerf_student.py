@@ -93,7 +93,7 @@ def raw2outputs(raw, z_vals, rays_d):
         T_n =  torch.exp(- sigma_n * delta_n)
 
         # weights = T_n * (1- T_n)
-        weights = torch.cumprod(1. - torch.exp(-sigma_n * delta_n), dim=1)
+        weights = torch.cumprod(T_n * (1. - T_n), dim=1)
         
         rgb_map = torch.sum(weights[:,:, None] * c_n, dim=1)
 
@@ -121,36 +121,23 @@ def find_nn(pts, ptscloud):
 
     :returns nn_index: the nearest index for every point in pts 
     """
-    nn_index = []
-    M = pts.shape[0] # no of sampled points along the ray 
+    nn_index = None
 
     try:
-        # step <-- distance between two consequtive cloud points        
+        # 1. step <-- distance between two consequtive cloud points        
         step_distance = (ptscloud[1] - ptscloud[0])[2]
 
-        # 1. iterate over each point in the ray pts
-        for r in range(M):
+        # 2. [find_NN]:  d(1st cloudpoints, ray) = ?
+        distance = torch.round(pts - ptscloud[0],decimals=3)
 
-            # 2. [find_NN]:  d(1st cloudpoints, ray) = ?
-            distance = torch.round(pts[r] - ptscloud[0],decimals=3)
+        # 3. [find_NN]:  index ~ closest ptsCloud  
+        ijk_index = torch.round(distance/step_distance)
 
-            # 3. [find_NN]:  index ~ closest ptsCloud  
-            index = torch.round(distance/step_distance)
+        # 4. [find_NN]: nn_index <--- (i,j,k) append neighbor to list 
+        index = ijk_index[..., 0] * 200 + ijk_index[..., 1] * 200 * 200 + ijk_index[..., 2]
 
-            # 4. [find_NN]: discretize the i,j,k
-            i = (index[0]).to(dtype=torch.int)
-            j = (index[1]).to(dtype=torch.int)
-            k = (index[2]).to(dtype=torch.int)
-
-            # 5. [find_NN]: d(cloud[index], ray) ~ [0.00, step_distance]
-            index = i * 200 + j * 200 * 200 + k
-            distance = torch.round(pts[r] - ptscloud[index],decimals=3)
-            
-            # 7. [find_NN]: nn_index <--- (i,j,k) append neighbor to list 
-            nn_index.append(index)
+        nn_index = torch.tensor(index)
                 
-        # 8. return stack of indexes         
-        nn_index = torch.stack(nn_index,dim=0)
         return nn_index.long()
 
     except Exception as e:
@@ -193,23 +180,14 @@ def render_rays_discrete(ray_steps, rays_o, rays_d, N_samples, pt_cloud, rgb_val
 
         pts = rays_oo + ray_stepss * rays_dd
 
-        # print(f"[INFO.render_rays_discrete.1]:\t Generate rays ...  pts = {pts.shape}")
-        # print("--" * 70)
-
     except Exception as e:
         print(f"[ERROR.render_rays_discrete.1]:\t Cannot Generate rays {e}")
         print("--" * 70)
 
     ####################################### 2. [Find Nearest Neighbor]:  t <-- t_n (nearest) ∀ t ∈ rays R^n #####################################################
-    NN_rays = []  
-    for ray in range(pts.shape[0]):
-        NN_rays.append(find_nn(pts[ray],pt_cloud))
-
-    NN_rays = torch.stack(NN_rays)
+    NN_rays = find_nn(pts,pt_cloud)
     sigma_NN = sigma_val[NN_rays]
     rgb_NN = rgb_val[NN_rays]
-    # print(f"[INFO.render_rays_discrete.2]:\t Ray[All] = {NN_rays.shape}, sigma_NN = {sigma_NN.shape}, rgb_NN = {rgb_NN.shape}")
-    # print("--" * 70)
 
     ###################################### 3. [Render color]: C(r) <-- ∫Tn (1-exp(-phi_n * delta_n)) * c_n #######################################################
     try:
@@ -218,12 +196,9 @@ def render_rays_discrete(ray_steps, rays_o, rays_d, N_samples, pt_cloud, rgb_val
         z_vals = (ray_steps[1:] - ray_steps[:-1])                               # (199)
         z_vals = torch.concatenate((ray_steps[0].unsqueeze(0),z_vals),dim=0)    # (200) 
         z_vals = z_vals.unsqueeze(0).repeat(pts.shape[0],1)                     # (1024,200)
-       
         raw = torch.concatenate([rgb_NN,sigma_NN],dim=2)                          # (1024, 200, 4)
 
-        # print(f"[INFO.render_rays_discrete.3]:\t raw = {raw.shape}, z_vals={z_vals.shape}, rays_d={rays_d.shape}")
         rgb_val_rays = raw2outputs(raw,z_vals,rays_d)
-        # print("--" * 70)
 
     except Exception as e:
         print(f"[ERROR.render_rays_discrete.3]: {e}")
@@ -245,28 +220,29 @@ def regularize_rgb_sigma(point_cloud, rgb_values, sigma_values):
     l2_rgb: regularization for rgb - scalar
     l2_sigma: regularization for density - scalar 
     """
-    
+    l2_rgb, l2_sigma = None, None
     try:
 
-        # # 1. [regularize]: sample subset of size M
-        # M =  5_000                                             # M <-- size of cloudpoint subset
-        # s_index = torch.randperm(point_cloud.shape[0])[:M]     # s_index <-- random indexes subset
-        # rgb_s = rgb_values[s_index]                            # rgb subset
-        # sigma_s = sigma_values[s_index]                        # sigma subset
-
+        # 1. [regularize]: sample subset of size M
+        M =  5_000                                                      # M <-- size of cloudpoint subset
+        random_permutation = torch.randperm(point_cloud.shape[0]-1)     # random permutation of indexes      
+        s_index = random_permutation[:M]                                # s_index <-- random indexes subset
+        s_index_adj = random_permutation[:M] + 1                        # s_index_adj <-- the neighbor (i,j,k+1)  
+        rgb_s = rgb_values[s_index]                                     # rgb subset
+        sigma_s = sigma_values[s_index]                                 # sigma subset
+        rgb_adj = rgb_values[s_index_adj]                               # rgb subset for neighbors
+        sigma_adj = rgb_values[s_index_adj]                             # sigma subset for neighbors
         
-        # 2. [regularize]: find set of neighbors
-        sample_size = 1000
+        # 2. [regularize]: difference c[i,j,k] - c[m,n,p]
+        l2_rgb = torch.sum(torch.square(torch.norm(rgb_s - rgb_adj, dim=-1)))
 
-        sampled_indices = torch.randperm(point_cloud.shape[0])[:sample_size]
-        sampled_rgb_values = rgb_values[sampled_indices]
-        sampled_sigma_values = sigma_values[sampled_indices]
+        # 4. [regularize]: differnece theta[i,j,k] - theta[m,n,p]
+        l2_sigma = torch.sum(torch.square(sigma_s - sigma_adj))
 
-        diff_rgb = sampled_rgb_values.view(-1, 1, 3) - sampled_rgb_values.view(1, sample_size, 3)
-        l2_rgb = torch.square(torch.norm(diff_rgb, dim=-1)).sum()
-
-        diff_sigma = sampled_sigma_values.view(-1, 1) - sampled_sigma_values.view(1, sample_size)
-        l2_sigma = torch.square(diff_sigma).sum()
+        # print("\n")
+        # print("--" * 70)
+        # print(f"[INFO.regularize]:\t\t l2_rgb   = {l2_rgb}")
+        # print(f"[INFO.regularize]:\t\t l2_sigma = {l2_sigma}")
 
     except Exception as e: 
         print(f"[ERROR.regularize_rgb_sigma]: {e}")
@@ -282,7 +258,7 @@ def train():
     '''
     N_rand = 1024 # number of rays that are use during the training, IF YOU DO NOT HAVE ENOUGH RAM YOU CAN DECREASE IT BUT DO NOT NOT FORGET TO INCREASE THE N_iter!!!!
     precrop_frac = 0.9 # do not change
-    start , N_iters = 0, 100000
+    start , N_iters = 0, 5_00
     N_samples = 200 # numebr of samples along the ray
     precrop_iters = 0
     lrate = 5e-3 # learning rate
