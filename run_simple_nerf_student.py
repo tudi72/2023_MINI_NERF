@@ -100,9 +100,6 @@ def raw2outputs(raw, z_vals, rays_d):
 
     return rgb_map
 
-class NeighborFoundException(Exception):
-    pass 
-
 def find_nn(pts, ptscloud):
     """
     pts: points along the ray of size (M,3)
@@ -117,64 +114,45 @@ def find_nn(pts, ptscloud):
     try:
         # step <-- distance between two consequtive cloud points        
         step_distance = (ptscloud[1] - ptscloud[0])[2]
-        print(f"[INFO.find_nn]:\t\t  step d(cloud[0], cloud[1])= {step_distance}")
-        print("--" * 70)
 
         # 1. iterate over each ray
         for r in range(M):
-            # 2. compute distance between d(1st cloudpoints, ray) = ?
-            distance = abs(sum(torch.round(ptscloud[0] - pts[r])))
 
-            print(f"[INFO.find_nn]:\t\t  distance = {distance}")
-            print("--" * 70)
+            # 2. [find_NN]:  d(1st cloudpoints, ray) = ?
+            distance = torch.round(pts[r] - ptscloud[0],decimals=3)
 
-            # 3. approximate the distance to closest neighbor index = step * distance 
+            # 3. [find_NN]:  index ~ closest ptsCloud  
             index = torch.round(distance/step_distance)
-            print(f"[INFO.find_nn]:\t\t  index = {index}")
+
+            # 4. [find_NN]: discretize the i,j,k
+            i = (index[0]).to(dtype=torch.int)
+            j = (index[1]).to(dtype=torch.int)
+            k = (index[2]).to(dtype=torch.int)
+
+            # 5. [find_NN]: d(cloud[index], ray) ~ [0.00, step_distance]
+            index = i * 200 + j * 200 * 200 + k
+            distance = torch.round(pts[r] - ptscloud[index],decimals=3)
+
+            print(f"[INFO.find_nn]:\t\t  d([{i},{j},{k}],ray) = {distance}, step = {step_distance}, index={index}")
             print("--" * 70)
-
-            # 4. discretize the i,j,k coordinates
-            k = (index % 200).to(dtype=torch.int)
-            i = (index // 200 % 200).to(dtype=torch.int)
-            j = (index // 200 // 200 % 200).to(dtype=torch.int)
-
-            print(f"[INFO.find_nn]:\t\t  d([{i},{j},{k}],ray) = {distance}")
-            print("--" * 70)
-
-            # iterate over all neighbors 
-            for i in range(i-1,i+1):
-                for j in range(j-1,j+1):
-                    for k in range(k-1,k+1):
-
-                        if i < 0 or j < 0 or k < 0 or i > 199 or j > 199 or k > 199:
-                            continue 
-
-                        # 5. recompute distance d(cloud[index], ray)
-                        index = i * 200 + j * 200 * 200 + k
-                        distance = abs(sum(torch.round(ptscloud[index] - pts[r])))
-
-                        print(f"[INFO.find_nn]:\t\t [{i},{j},{k}] --> {index}, distance = {distance}")
-                        print("--" * 70)
-
-                        # 6. stop when we found a close neighbor 
-                        if distance < 1e-2:
-                            print(f"[INFO.find_nn]:\t\t  d([{i},{j},{k}],ray) = {distance}, step = {step_distance}, index={index}")
-                            
-                            # 7. append neighbor to list 
-                            nn_index.append(torch.tensor([i,j,k]))
+            
+            # 7. [find_NN]: nn_index <--- (i,j,k) append neighbor to list 
+            nn_index.append(torch.tensor([i,j,k]))
                 
-        # 7. return stack of indexes         
+        # 8. return stack of indexes         
         nn_index = torch.stack(nn_index,dim=0)
-        
+
         print(f"[INFO.find_nn]:\t\t nn_index = {nn_index.shape}")    
         print("--" * 70)
 
+        return nn_index.long()
+
     except Exception as e:
-        print("--" * 70)
+
         print(f"[ERROR.find_nn]:\t\t {e}")
         print("--" * 70)
 
-    return nn_index.long()
+        return None 
 
 def render_rays_discrete(ray_steps, rays_o, rays_d, N_samples, pt_cloud, rgb_val, sigma_val, T_n):
     """
