@@ -57,9 +57,8 @@ def create_pointcloud(N, min_val, max_val):
     flat = query_pts.reshape([-1,3])
     flat_indices = query_indices.reshape([-1,3])
 
-    print("--" * 70)
-    print(f"[INFO.create_pointcloud]:\t Point cloud ... Values = {flat.shape}, t= [{min_val},{max_val},{N}], indices = {flat_indices.shape}")
-    print("--" * 70)
+    # print(f"[INFO.create_pointcloud]:\t Point cloud ... Values = {flat.shape}, t= [{min_val},{max_val},{N}], indices = {flat_indices.shape}")
+    # print("--" * 70)
 
     return torch.tensor(flat), t, flat_indices
 
@@ -82,23 +81,37 @@ def raw2outputs(raw, z_vals, rays_d):
     by weights we mean the all coefficients the multiplies the color \hat C(r) = \sum_{n=1}^{N} T_n (1-\exp(-\sigma_n\delta_n))c_n
     weights_n = T_n (1-\exp(-\sigma_n\delta_n))
     '''
-    sigma_n = raw[:,3]
-    rgb = raw[:,:3]
-    # T_n = 1.-tf.exp(-sigma_a * dists) 
-    weights = raw[:,4] * (1.0 - torch.exp(-sigma_n * z_vals)) # size of (num_rays, num_samples along ray). 
-    rgb_map = None
+
+                
+    try:
+        # delta_n = z_vals * ||ray||
+        delta_n = z_vals * torch.norm(rays_d[:, None, :], dim=2)
+        sigma_n = raw[:,:,3]
+        c_n = raw[:,:,:3]
+
+        # steps T_n = exp(-Σσ_n * δ_n)
+        T_n =  torch.exp(- sigma_n * delta_n)
+
+        # weights = T_n * (1- T_n)
+        weights = torch.cumprod(1. - torch.exp(-sigma_n * delta_n), dim=1)
+        
+        rgb_map = torch.sum(weights[:,:, None] * c_n, dim=1)
+
+        acc_map = torch.sum(weights, -1)
+
+        if True: # this MUST BE ALWAYS TRUE in your case
+            '''
+            for the pixel in the background the density values is around zero.
+            if the density values are all zero then the rgb_map and acc_map will be zero and the output will be 1.
+            on the other hand if the acc_map is 1 (the presence of the object) the last term will be zero!
+            '''
+            rgb_map = rgb_map + (1.-acc_map[...,None])
     
-    acc_map = torch.sum(weights, -1)
+        return rgb_map
 
-    if True: # this MUST BE ALWAYS TRUE in your case
-        '''
-        for the pixel in the background the density values is around zero.
-        if the density values are all zero then the rgb_map and acc_map will be zero and the output will be 1.
-        on the other hand if the acc_map is 1 (the presence of the object) the last term will be zero!
-        '''
-        rgb_map = rgb_map + (1.-acc_map[...,None])
-
-    return rgb_map
+    except Exception as e:
+        print(f"[ERROR.raw2output]:\t\t{e}")
+        return None     
 
 def find_nn(pts, ptscloud):
     """
@@ -115,7 +128,7 @@ def find_nn(pts, ptscloud):
         # step <-- distance between two consequtive cloud points        
         step_distance = (ptscloud[1] - ptscloud[0])[2]
 
-        # 1. iterate over each ray
+        # 1. iterate over each point in the ray pts
         for r in range(M):
 
             # 2. [find_NN]:  d(1st cloudpoints, ray) = ?
@@ -132,19 +145,12 @@ def find_nn(pts, ptscloud):
             # 5. [find_NN]: d(cloud[index], ray) ~ [0.00, step_distance]
             index = i * 200 + j * 200 * 200 + k
             distance = torch.round(pts[r] - ptscloud[index],decimals=3)
-
-            print(f"[INFO.find_nn]:\t\t  d([{i},{j},{k}],ray) = {distance}, step = {step_distance}, index={index}")
-            print("--" * 70)
             
             # 7. [find_NN]: nn_index <--- (i,j,k) append neighbor to list 
-            nn_index.append(torch.tensor([i,j,k]))
+            nn_index.append(index)
                 
         # 8. return stack of indexes         
         nn_index = torch.stack(nn_index,dim=0)
-
-        print(f"[INFO.find_nn]:\t\t nn_index = {nn_index.shape}")    
-        print("--" * 70)
-
         return nn_index.long()
 
     except Exception as e:
@@ -154,7 +160,7 @@ def find_nn(pts, ptscloud):
 
         return None 
 
-def render_rays_discrete(ray_steps, rays_o, rays_d, N_samples, pt_cloud, rgb_val, sigma_val, T_n):
+def render_rays_discrete(ray_steps, rays_o, rays_d, N_samples, pt_cloud, rgb_val, sigma_val):
     """
     ray_steps: the scalar list of size (N_samples) of steps (see TODOs below)
     rays_o: origin of the rays of size (NX3) 
@@ -176,46 +182,49 @@ def render_rays_discrete(ray_steps, rays_o, rays_d, N_samples, pt_cloud, rgb_val
     
     :returns rgb_val_rays: rgb values for the rays of size (NX3)
     """
-    N = rays_o.shape[0]     # Number of rays
     rgb_val_rays = None
 
     ####################################### 1. [Generating Rays]:  r(t) = o + t*d  ###########################################################################
     try:
-        print("--" * 70)
         # 1.1 [Expand shape by repeating N times]    :  r(t),o(t):  (1024,3) --> (1024,N_samples,3) and t : (N_samples) --> (N_samples,3)
-        rays_d = rays_d.unsqueeze(1).repeat(1,N_samples,1)
-        rays_o = rays_o.unsqueeze(1).repeat(1,N_samples,1)
-        ray_steps = ray_steps.repeat(3,1).transpose(0,1)
+        rays_dd = rays_d.unsqueeze(1).repeat(1,N_samples,1)
+        rays_oo = rays_o.unsqueeze(1).repeat(1,N_samples,1)
+        ray_stepss = ray_steps.repeat(3,1).transpose(0,1)
 
-        pts = rays_o + ray_steps * rays_d
+        pts = rays_oo + ray_stepss * rays_dd
 
-        print(f"[INFO.render_rays_discrete.1]:\t Generate rays ...  pts = {pts.shape}")
-        print("--" * 70)
+        # print(f"[INFO.render_rays_discrete.1]:\t Generate rays ...  pts = {pts.shape}")
+        # print("--" * 70)
 
     except Exception as e:
-        print("--" * 70)
         print(f"[ERROR.render_rays_discrete.1]:\t Cannot Generate rays {e}")
         print("--" * 70)
 
     ####################################### 2. [Find Nearest Neighbor]:  t <-- t_n (nearest) ∀ t ∈ rays R^n #####################################################
-    pts_indices = []  
-    for ray in range(N):
-        hihi = find_nn(pts[ray],pt_cloud)
-        pts_indices.append(hihi)
-        print(f"[INFO.render_rays_discrete.2]:\t Map rays to cloud ...  pts = {hihi.shape}")
-        break
+    NN_rays = []  
+    for ray in range(pts.shape[0]):
+        NN_rays.append(find_nn(pts[ray],pt_cloud))
 
-    pts_indices = torch.stack(pts_indices)
-    print(f"[INFO.render_rays_discrete.2]:\t Map rays to cloud ...  pts = {pts_indices.shape}")
-    print("--" * 70)
+    NN_rays = torch.stack(NN_rays)
+    sigma_NN = sigma_val[NN_rays]
+    rgb_NN = rgb_val[NN_rays]
+    # print(f"[INFO.render_rays_discrete.2]:\t Ray[All] = {NN_rays.shape}, sigma_NN = {sigma_NN.shape}, rgb_NN = {rgb_NN.shape}")
+    # print("--" * 70)
 
     ###################################### 3. [Render color]: C(r) <-- ∫Tn (1-exp(-phi_n * delta_n)) * c_n #######################################################
     try:
-        z_vals = ray_steps
-        raw = torch.stack(rgb_val,sigma_val)
-        print(f"[INFO.render_rays_discrete]:\t Raw  ...  raw = {raw.shape}, z_vals={z_vals.shape}")
+
+        # steps δ_n = δ_n+1 - δ_n) -->broadcast (N_rays, δ_n)
+        z_vals = (ray_steps[1:] - ray_steps[:-1])                               # (199)
+        z_vals = torch.concatenate((ray_steps[0].unsqueeze(0),z_vals),dim=0)    # (200) 
+        z_vals = z_vals.unsqueeze(0).repeat(pts.shape[0],1)                     # (1024,200)
+       
+        raw = torch.concatenate([rgb_NN,sigma_NN],dim=2)                          # (1024, 200, 4)
+
+        # print(f"[INFO.render_rays_discrete.3]:\t raw = {raw.shape}, z_vals={z_vals.shape}, rays_d={rays_d.shape}")
         rgb_val_rays = raw2outputs(raw,z_vals,rays_d)
-        print("--" * 70)
+        # print("--" * 70)
+
     except Exception as e:
         print(f"[ERROR.render_rays_discrete.3]: {e}")
         print("--" * 70)
@@ -236,7 +245,32 @@ def regularize_rgb_sigma(point_cloud, rgb_values, sigma_values):
     l2_rgb: regularization for rgb - scalar
     l2_sigma: regularization for density - scalar 
     """
-    l2_rgb, l2_sigma = None, None
+    
+    try:
+
+        # # 1. [regularize]: sample subset of size M
+        # M =  5_000                                             # M <-- size of cloudpoint subset
+        # s_index = torch.randperm(point_cloud.shape[0])[:M]     # s_index <-- random indexes subset
+        # rgb_s = rgb_values[s_index]                            # rgb subset
+        # sigma_s = sigma_values[s_index]                        # sigma subset
+
+        
+        # 2. [regularize]: find set of neighbors
+        sample_size = 1000
+
+        sampled_indices = torch.randperm(point_cloud.shape[0])[:sample_size]
+        sampled_rgb_values = rgb_values[sampled_indices]
+        sampled_sigma_values = sigma_values[sampled_indices]
+
+        diff_rgb = sampled_rgb_values.view(-1, 1, 3) - sampled_rgb_values.view(1, sample_size, 3)
+        l2_rgb = torch.square(torch.norm(diff_rgb, dim=-1)).sum()
+
+        diff_sigma = sampled_sigma_values.view(-1, 1) - sampled_sigma_values.view(1, sample_size)
+        l2_sigma = torch.square(diff_sigma).sum()
+
+    except Exception as e: 
+        print(f"[ERROR.regularize_rgb_sigma]: {e}")
+
     return l2_rgb, l2_sigma
 
 def train():
@@ -344,24 +378,6 @@ def train():
 
             t_vals = torch.linspace(0., 1., steps=N_samples)
             z_vals = near * (1.-t_vals) + far * (t_vals)
-            # 3. TODO: implement steps t_n, compute error
-            
-            # steps δ_n = δ_n+1 = δ_n)
-            print("="*70)
-            print("[INFO.train]:\t\t sigma_n = " ,sigma_val.shape)
-            print("="*70)
-
-            delta_n = z_vals[1:] - z_vals[:-1]
-            # delta_n = delta_n.repeat(sigma_val.shape[0],1)
-
-            print("="*70)
-            print("[INFO.train]:\t\t delta_n =" ,delta_n.shape)
-            print("="*70)
-
-            # steps T_n = exp(-Σσ_n * δ_n)
-            T_n =  torch.exp(-torch.sum(sigma_val * delta_n)) 
-            print("[INFO.train]:\t\t T_n = ",delta_n.shape)
-            print("="*70)
             
             rgb_map = render_rays_discrete(ray_steps = z_vals,
                                            rays_o = rays_o,
@@ -369,11 +385,8 @@ def train():
                                            N_samples = N_samples,
                                            pt_cloud = pt_cloud,
                                            rgb_val = rgb_val,
-                                           sigma_val = sigma_val,
-                                           T_n = T_n,) # T_n = distance between adjacent samples
-            print("--" * 70)
-            print(f"[INFO.train]: rgb_map = {rgb_map.shape}, target_s = {target_s.shape}")
-            print("--" * 70)
+                                           sigma_val = sigma_val,)
+
             # Note that the rgb_map MUST have the same shape as the target_s !!!!
             
             # do not make any change          
