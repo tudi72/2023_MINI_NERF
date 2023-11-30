@@ -84,7 +84,7 @@ def raw2outputs(raw, z_vals, rays_d):
     '''
     sigma_n = raw[:,3]
     rgb = raw[:,:3]
-    T_n = 1.-tf.exp(-sigma_a * dists) 
+    # T_n = 1.-tf.exp(-sigma_a * dists) 
     weights = raw[:,4] * (1.0 - torch.exp(-sigma_n * z_vals)) # size of (num_rays, num_samples along ray). 
     rgb_map = None
     
@@ -113,35 +113,57 @@ def find_nn(pts, ptscloud):
     """
     nn_index = []
     M = pts.shape[0] # no of sampled points along the ray 
-    N = 200
-    try:
 
-        ptscloud = ptscloud.view(N,N,N,3)
-        print(f"[INFO.find_nn]:\t {ptscloud.shape} ---> {ptscloud.shape}")
+    try:
+        # step <-- distance between two consequtive cloud points        
+        step_distance = (ptscloud[1] - ptscloud[0])[2]
+        print(f"[INFO.find_nn]:\t\t  step d(cloud[0], cloud[1])= {step_distance}")
         print("--" * 70)
 
-            
-            # search cloud points until distance << (~ one neighbor away) 
-            # for each ray r point        
+        # 1. iterate over each ray
         for r in range(M):
-            try:
-                for i in range(N):
-                    for j in range(N):
-                        for k in range(N):
+            # 2. compute distance between d(1st cloudpoints, ray) = ?
+            distance = abs(sum(torch.round(ptscloud[0] - pts[r])))
+
+            print(f"[INFO.find_nn]:\t\t  distance = {distance}")
+            print("--" * 70)
+
+            # 3. approximate the distance to closest neighbor index = step * distance 
+            index = torch.round(distance/step_distance)
+            print(f"[INFO.find_nn]:\t\t  index = {index}")
+            print("--" * 70)
+
+            # 4. discretize the i,j,k coordinates
+            k = (index % 200).to(dtype=torch.int)
+            i = (index // 200 % 200).to(dtype=torch.int)
+            j = (index // 200 // 200 % 200).to(dtype=torch.int)
+
+            print(f"[INFO.find_nn]:\t\t  d([{i},{j},{k}],ray) = {distance}")
+            print("--" * 70)
+
+            # iterate over all neighbors 
+            for i in range(i-1,i+1):
+                for j in range(j-1,j+1):
+                    for k in range(k-1,k+1):
+
+                        if i < 0 or j < 0 or k < 0 or i > 199 or j > 199 or k > 199:
+                            continue 
+
+                        # 5. recompute distance d(cloud[index], ray)
+                        index = i * 200 + j * 200 * 200 + k
+                        distance = abs(sum(torch.round(ptscloud[index] - pts[r])))
+
+                        print(f"[INFO.find_nn]:\t\t [{i},{j},{k}] --> {index}, distance = {distance}")
+                        print("--" * 70)
+
+                        # 6. stop when we found a close neighbor 
+                        if distance < 1e-2:
+                            print(f"[INFO.find_nn]:\t\t  d([{i},{j},{k}],ray) = {distance}, step = {step_distance}, index={index}")
                             
-                            # 2. Find t_n (nearest n-th 3D point along ray)
-                            distance = abs(sum(torch.round(ptscloud[i,j,k] - pts[r])))
-
-                            # 3. stop when we found a close neighbor 
-                            if distance < 1e-3:
-                                raise NeighborFoundException()
-
-            # 4. found a neighbor point 
-            except NeighborFoundException as e:
-                nn_index.append(torch.tensor([i,j,k]))
-                # print(f"[INFO.find_nn]:\t\t Found Neighbor [{i},{j},{k}] at distance {distance}")
-
-        # 5. return stack of indexes         
+                            # 7. append neighbor to list 
+                            nn_index.append(torch.tensor([i,j,k]))
+                
+        # 7. return stack of indexes         
         nn_index = torch.stack(nn_index,dim=0)
         
         print(f"[INFO.find_nn]:\t\t nn_index = {nn_index.shape}")    
@@ -348,19 +370,19 @@ def train():
             
             # steps δ_n = δ_n+1 = δ_n)
             print("="*70)
-            print("sigma_n" ,sigma_val.shape)
+            print("[INFO.train]:\t\t sigma_n = " ,sigma_val.shape)
             print("="*70)
 
             delta_n = z_vals[1:] - z_vals[:-1]
-            delta_n = delta_n.repeat(sigma_val.shape[0],1)
+            # delta_n = delta_n.repeat(sigma_val.shape[0],1)
 
             print("="*70)
-            print("delta_n" ,delta_n.shape)
+            print("[INFO.train]:\t\t delta_n =" ,delta_n.shape)
             print("="*70)
 
             # steps T_n = exp(-Σσ_n * δ_n)
             T_n =  torch.exp(-torch.sum(sigma_val * delta_n)) 
-            print(delta_n.shape)
+            print("[INFO.train]:\t\t T_n = ",delta_n.shape)
             print("="*70)
             
             rgb_map = render_rays_discrete(ray_steps = z_vals,
