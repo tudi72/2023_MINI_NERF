@@ -22,7 +22,11 @@ $$
 \begin{align*}
     z_{vals} &\in \mathbb{R}^1 \quad \text{and} \quad |z_{vals}| = 200\\
     ray &\in \mathbb{R}^3 \quad \text{and} \quad |ray| = 1024 \\ 
-    t_i &= z_n * \|\overrightarrow{ray_i}\| \\
-    \delta_i &= t_{i+1} - t_i \quad \text{and} \quad \delta_n = t_n
+    t_i &= z_n * \|\|\overrightarrow{ray_i}\|\| \\
+    \delta_i &= t_{i+1} - t_i \quad \text{and} \quad \delta_n = t_n 
 \end{align*}
 $$
+
+In the code below, we can observe how the step function $t_n$ is created and then multiplied with the ray's direction as a magnitude.
+
+![Alt text](image-1.png)

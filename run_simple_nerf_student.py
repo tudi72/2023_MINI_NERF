@@ -86,24 +86,36 @@ def raw2outputs(raw, z_vals, rays_d):
     try:
         # delta_n = z_vals * ||ray||
         rays_d_magnitude = torch.norm(rays_d,dim=1).unsqueeze(1)
-        rays_d_temp = torch.norm(rays_d[:, None, :], dim=2)
-        delta_n = z_vals * rays_d_temp
+
+        # steps δ_n = δ_n+1 - δ_n) -->broadcast (N_rays, δ_n)
+        z_vals = torch.diff(z_vals)                                                     # (199)
+        z_vals = torch.concatenate((z_vals,z_vals[-1].unsqueeze(0)),dim=0)               # (200) 
+        z_vals = z_vals.repeat(rays_d.shape[0],1)               # (1024,200)
+        delta_n = z_vals * rays_d_magnitude
+
         sigma_n = raw[:,:,3]
         c_n = raw[:,:,:3]
+
         print("--"* 80)
-        print(f"[RAW2OUTPUT]:\t\t   rays_d[0]       = {rays_d[0]}")
-        print(f"[RAW2OUTPUT]:\t\t ||rays_d[0]||     = {rays_d_temp[0]}")
-        print(f"[RAW2OUTPUT]:\t\t  delta_n[0]       = {delta_n[0,0]}  .... shape(delta)= {delta_n.shape}")
-        print(f"[RAW2OUTPUT]:\t\trays_d_magnitude[0]= {rays_d_magnitude[0]}  .... shape(rays_d_magnitude)= {rays_d_magnitude.shape}")
-        print("--"* 80)
+        # print(f"[RAW2OUTPUT]:\t\t   t_n[0,0:5]        = {z_vals[0,-5:]}")
+        # print(f"[RAW2OUTPUT]:\t\t  ||rays_d[0]||      = {rays_d_magnitude[0]}")
+        # print(f"[RAW2OUTPUT]:\t\t  shape(delta)       = {delta_n.shape}  .... shape(sigma_n)= {sigma_n.shape}")
 
         # steps T_n = exp(-Σσ_n * δ_n)
-        T_n =  torch.exp(- sigma_n * delta_n)
+        T_n_n = sigma_n * delta_n
+        T_n = torch.cumsum(sigma_n * delta_n,dim=1)
+        # T_n =  torch.exp(- torch.cumsum(sigma_n * delta_n))
+        print(f"[RAW2OUTPUT]:\t\t   sigma_n[0,:5]        = {sigma_n[0,:5]} .... shape(T_n) = {sigma_n.shape}")
+        print(f"[RAW2OUTPUT]:\t\t   delta_n[0,:5]        = {delta_n[0,:5]} .... shape(T_n) = {delta_n.shape}")
+        print(f"[RAW2OUTPUT]:\t\t   T_n_n  [0,:5]        = {T_n_n[0,:5]} .... shape(T_n) = {T_n_n.shape}")
+        print(f"[RAW2OUTPUT]:\t\t   T_n    [0,:5]        = {T_n[0,:5]} .... shape(T_n) = {T_n.shape}")
 
         # weights = T_n * (1- T_n)
-        weights = torch.cumprod(T_n * (1. - T_n), dim=1)
+        weights = torch.cumprod(T_n * (1.0 - torch.exp(-sigma_n * delta_n)), dim=1)
+        # print(f"[RAW2OUTPUT]:\t\t   T_n[0,0:5]        = {weights[0,-5:]} .... shape(T_n) = {weights.shape}")
         
         rgb_map = torch.sum(weights[:,:, None] * c_n, dim=1)
+        print("--"* 80)
 
         acc_map = torch.sum(weights, -1)
 
@@ -208,13 +220,9 @@ def render_rays_discrete(ray_steps, rays_o, rays_d, N_samples, pt_cloud, rgb_val
     ###################################### 3. [Render color]: C(r) <-- ∫Tn (1-exp(-phi_n * delta_n)) * c_n #######################################################
     try:
 
-        # steps δ_n = δ_n+1 - δ_n) -->broadcast (N_rays, δ_n)
-        z_vals = (ray_steps[1:] - ray_steps[:-1])                               # (199)
-        z_vals = torch.concatenate((ray_steps[0].unsqueeze(0),z_vals),dim=0)    # (200) 
-        z_vals = z_vals.unsqueeze(0).repeat(pts.shape[0],1)                     # (1024,200)
         raw = torch.concatenate([rgb_NN,sigma_NN],dim=2)                          # (1024, 200, 4)
 
-        rgb_val_rays = raw2outputs(raw,z_vals,rays_d)
+        rgb_val_rays = raw2outputs(raw,ray_steps,rays_d)
 
     except Exception as e:
         print(f"[ERROR.render_rays_discrete.3]: {e}")
@@ -240,7 +248,7 @@ def regularize_rgb_sigma(point_cloud, rgb_values, sigma_values):
     try:
 
         # 1. [regularize]: sample subset of size M
-        M =  5_000                                                      # M <-- size of cloudpoint subset
+        M =  1_000                                                      # M <-- size of cloudpoint subset
         random_permutation = torch.randperm(point_cloud.shape[0]-1)     # random permutation of indexes      
         s_index = random_permutation[:M]                                # s_index <-- random indexes subset
         s_index_adj = random_permutation[:M] + 1                        # s_index_adj <-- the neighbor (i,j,k+1)  
@@ -274,7 +282,7 @@ def train():
     '''
     N_rand = 1024 # number of rays that are use during the training, IF YOU DO NOT HAVE ENOUGH RAM YOU CAN DECREASE IT BUT DO NOT NOT FORGET TO INCREASE THE N_iter!!!!
     precrop_frac = 0.9 # do not change
-    start , N_iters = 0, 1_500
+    start , N_iters = 0, 1_000
     N_samples = 200 # numebr of samples along the ray
     precrop_iters = 0
     lrate = 5e-3 # learning rate
