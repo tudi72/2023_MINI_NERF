@@ -85,9 +85,17 @@ def raw2outputs(raw, z_vals, rays_d):
                 
     try:
         # delta_n = z_vals * ||ray||
-        delta_n = z_vals * torch.norm(rays_d[:, None, :], dim=2)
+        rays_d_magnitude = torch.norm(rays_d,dim=1).unsqueeze(1)
+        rays_d_temp = torch.norm(rays_d[:, None, :], dim=2)
+        delta_n = z_vals * rays_d_temp
         sigma_n = raw[:,:,3]
         c_n = raw[:,:,:3]
+        print("--"* 80)
+        print(f"[RAW2OUTPUT]:\t\t   rays_d[0]       = {rays_d[0]}")
+        print(f"[RAW2OUTPUT]:\t\t ||rays_d[0]||     = {rays_d_temp[0]}")
+        print(f"[RAW2OUTPUT]:\t\t  delta_n[0]       = {delta_n[0,0]}  .... shape(delta)= {delta_n.shape}")
+        print(f"[RAW2OUTPUT]:\t\trays_d_magnitude[0]= {rays_d_magnitude[0]}  .... shape(rays_d_magnitude)= {rays_d_magnitude.shape}")
+        print("--"* 80)
 
         # steps T_n = exp(-Σσ_n * δ_n)
         T_n =  torch.exp(- sigma_n * delta_n)
