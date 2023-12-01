@@ -126,19 +126,27 @@ def find_nn(pts, ptscloud):
     try:
         # 1. step <-- distance between two consequtive cloud points        
         step_distance = (ptscloud[1] - ptscloud[0])[2]
+        print("--"* 80)
+        print(f"[FIND_NN]:\t\t STEP                 = {step_distance}")
+        print(f"[FIND_NN]:\t\t pts[0,0]             = {pts[0,0]}")
 
         # 2. [find_NN]:  d(1st cloudpoints, ray) = ?
         distance = torch.round(pts - ptscloud[0],decimals=3)
+        print(f"[FIND_NN]:\t\t distance[0,0]        = {distance[0,0]}")
 
         # 3. [find_NN]:  index ~ closest ptsCloud  
-        ijk_index = torch.round(distance/step_distance)
-
+        ijk_index = torch.round(distance/step_distance,decimals=0)
+        print(f"[FIND_NN]:\t\t ijk_index[0,0]       = {ijk_index[0,0]}")
         # 4. [find_NN]: nn_index <--- (i,j,k) append neighbor to list 
         index = ijk_index[..., 0] * 200 + ijk_index[..., 1] * 200 * 200 + ijk_index[..., 2]
+        print(f"[FIND_NN]:\t\t index[0,0]           = {index[0,0]}")
 
-        nn_index = torch.tensor(index)
+        nn_index = index.clone().detach().long()
+        print(f"[FIND_NN]:\t\t nn_index[0,0]        = {nn_index[0,0]}")
+        print(f"[FIND_NN]:\t\t ptscloud[index[0,0]] = {ptscloud[nn_index[0,0]]}")
+        print("--"* 80)
                 
-        return nn_index.long()
+        return nn_index
 
     except Exception as e:
 
@@ -258,7 +266,7 @@ def train():
     '''
     N_rand = 1024 # number of rays that are use during the training, IF YOU DO NOT HAVE ENOUGH RAM YOU CAN DECREASE IT BUT DO NOT NOT FORGET TO INCREASE THE N_iter!!!!
     precrop_frac = 0.9 # do not change
-    start , N_iters = 0, 5_00
+    start , N_iters = 0, 1_500
     N_samples = 200 # numebr of samples along the ray
     precrop_iters = 0
     lrate = 5e-3 # learning rate
