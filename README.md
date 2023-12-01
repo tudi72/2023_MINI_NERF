@@ -16,12 +16,11 @@ In the code below, we observe the values of the closest $\textit{cloud point}$ f
 
 
 ## 2. Raw to output 
-It's the rendering function that outputs the color for a predicted density $\sigma_i$ as well as RGB values $c_i$.  
+It's the rendering function that outputs the color for a predicted density $\sigma_i$ as well as RGB values $c_i$.    
 
 $$
 \begin{align*}
-    \t_i &= z_n * \|\overrightarrow{ray_i}\| \\
-    \delta_n &= t_{n+1} - t_n \text{and} \delta_n = t_n 
-     
+    t_i &= z_n * \|\overrightarrow{ray_i}\| \\
+    \delta_n &= t_{n+1} - t_n \text{and} \delta_n = t_n
 \end{align*}
 $$
