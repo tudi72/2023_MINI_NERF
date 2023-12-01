@@ -88,36 +88,35 @@ def raw2outputs(raw, z_vals, rays_d):
         rays_d_magnitude = torch.norm(rays_d,dim=1).unsqueeze(1)
 
         # steps δ_n = δ_n+1 - δ_n) -->broadcast (N_rays, δ_n)
-        z_vals = torch.diff(z_vals)                                                     # (199)
-        z_vals = torch.concatenate((z_vals,z_vals[-1].unsqueeze(0)),dim=0)               # (200) 
-        z_vals = z_vals.repeat(rays_d.shape[0],1)               # (1024,200)
+        z_vals = torch.diff(z_vals)                                                         # (199)
+        z_vals = torch.concatenate((z_vals,z_vals[-1].unsqueeze(0)),dim=0)                  # (200) 
+        z_vals = z_vals.repeat(rays_d.shape[0],1)                                           # (1024,200)
         delta_n = z_vals * rays_d_magnitude
 
         sigma_n = raw[:,:,3]
         c_n = raw[:,:,:3]
 
-        print("--"* 80)
+        # print("--"* 80)
         # print(f"[RAW2OUTPUT]:\t\t   t_n[0,0:5]        = {z_vals[0,-5:]}")
         # print(f"[RAW2OUTPUT]:\t\t  ||rays_d[0]||      = {rays_d_magnitude[0]}")
         # print(f"[RAW2OUTPUT]:\t\t  shape(delta)       = {delta_n.shape}  .... shape(sigma_n)= {sigma_n.shape}")
 
         # steps T_n = exp(-Σσ_n * δ_n)
-        T_n_n = sigma_n * delta_n
-        T_n = torch.cumsum(sigma_n * delta_n,dim=1)
-        # T_n =  torch.exp(- torch.cumsum(sigma_n * delta_n))
-        print(f"[RAW2OUTPUT]:\t\t   sigma_n[0,:5]        = {sigma_n[0,:5]} .... shape(T_n) = {sigma_n.shape}")
-        print(f"[RAW2OUTPUT]:\t\t   delta_n[0,:5]        = {delta_n[0,:5]} .... shape(T_n) = {delta_n.shape}")
-        print(f"[RAW2OUTPUT]:\t\t   T_n_n  [0,:5]        = {T_n_n[0,:5]} .... shape(T_n) = {T_n_n.shape}")
-        print(f"[RAW2OUTPUT]:\t\t   T_n    [0,:5]        = {T_n[0,:5]} .... shape(T_n) = {T_n.shape}")
+        T_n =  torch.exp(- torch.cumsum(sigma_n * delta_n,dim=-1))                           # (1024,200)
 
-        # weights = T_n * (1- T_n)
-        weights = torch.cumprod(T_n * (1.0 - torch.exp(-sigma_n * delta_n)), dim=1)
-        # print(f"[RAW2OUTPUT]:\t\t   T_n[0,0:5]        = {weights[0,-5:]} .... shape(T_n) = {weights.shape}")
+        # print(f"[RAW2OUTPUT]:\t\t   sigma_n[0,:5]        = {sigma_n[0,:5]} .... shape(T_n) = {sigma_n.shape}")
+        # print(f"[RAW2OUTPUT]:\t\t   delta_n[0,:5]        = {delta_n[0,:5]} .... shape(T_n) = {delta_n.shape}")
+        # print(f"[RAW2OUTPUT]:\t\t   T_n_n  [0,:5]        = {T_n_n[0,:5]} .... shape(T_n) = {T_n_n.shape}")
+        # print(f"[RAW2OUTPUT]:\t\t   T_n    [0,:5]        = {T_n[0,:5]} .... shape(T_n) = {T_n.shape}")
+
+        weights = (T_n * (1.0 - torch.exp(-sigma_n * delta_n))).unsqueeze(2)          # (1024, 200) size of (num_rays, num_samples along ray).
+        # print(f"[RAW2OUTPUT]:\t\t   shape(weights) = {weights.shape}")
         
-        rgb_map = torch.sum(weights[:,:, None] * c_n, dim=1)
-        print("--"* 80)
+        rgb_map = torch.sum(weights * c_n,dim = 1)
+        # print(f"[RAW2OUTPUT]:\t\t   shape(rgb_map) = {rgb_map.shape}")
 
-        acc_map = torch.sum(weights, -1)
+        acc_map = torch.sum(weights.squeeze(2), -1)
+        # print(f"[RAW2OUTPUT]:\t\t   shape(rgb_map) = {rgb_map.shape}")
 
         if True: # this MUST BE ALWAYS TRUE in your case
             '''
@@ -126,7 +125,10 @@ def raw2outputs(raw, z_vals, rays_d):
             on the other hand if the acc_map is 1 (the presence of the object) the last term will be zero!
             '''
             rgb_map = rgb_map + (1.-acc_map[...,None])
+        # print(f"[RAW2OUTPUT]:\t\t   shape(rgb_map) = {rgb_map.shape}")
     
+        # print(f"[RAW2OUTPUT]:\t\t   shape(rgb_map) = {rgb_map.shape}")
+        # print("--"* 80)
         return rgb_map
 
     except Exception as e:
