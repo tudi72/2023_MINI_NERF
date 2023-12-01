@@ -4,7 +4,9 @@ We compute the $\textbf{Nearest Neighbor}$ using the following formula for a ray
 $$
 \begin{align*}
     Cloud_O &= (-3.75,-3.75,-3.75) \\
-    d(R_{ij}, Cloud_O) &= \lfloor R_{ij} - Cloud_O \rceil_3 
+    d(R_{ij}, Cloud_O) &= \lfloor R_{ij} - Cloud_O \rceil_3 \\ 
+    index_{ijk} &= \frac{d(R_{ij}, Cloud_O)}{STEP} \\
+    index &= index_i \cdot 200 + index_j \cdot 200 \cdot 200 + index_k 
 \end{align*}
 $$  
 
