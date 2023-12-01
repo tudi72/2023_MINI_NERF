@@ -126,25 +126,25 @@ def find_nn(pts, ptscloud):
     try:
         # 1. step <-- distance between two consequtive cloud points        
         step_distance = (ptscloud[1] - ptscloud[0])[2]
-        print("--"* 80)
-        print(f"[FIND_NN]:\t\t STEP                 = {step_distance}")
-        print(f"[FIND_NN]:\t\t pts[0,0]             = {pts[0,0]}")
+        # print("--"* 80)
+        # print(f"[FIND_NN]:\t\t STEP                 = {step_distance}")
+        # print(f"[FIND_NN]:\t\t pts[0,0]             = {pts[0,0]}")
 
         # 2. [find_NN]:  d(1st cloudpoints, ray) = ?
         distance = torch.round(pts - ptscloud[0],decimals=3)
-        print(f"[FIND_NN]:\t\t distance[0,0]        = {distance[0,0]}")
+        # print(f"[FIND_NN]:\t\t distance[0,0]        = {distance[0,0]}")
 
         # 3. [find_NN]:  index ~ closest ptsCloud  
         ijk_index = torch.round(distance/step_distance,decimals=0)
-        print(f"[FIND_NN]:\t\t ijk_index[0,0]       = {ijk_index[0,0]}")
+        # print(f"[FIND_NN]:\t\t ijk_index[0,0]       = {ijk_index[0,0]}")
         # 4. [find_NN]: nn_index <--- (i,j,k) append neighbor to list 
         index = ijk_index[..., 0] * 200 + ijk_index[..., 1] * 200 * 200 + ijk_index[..., 2]
-        print(f"[FIND_NN]:\t\t index[0,0]           = {index[0,0]}")
+        # print(f"[FIND_NN]:\t\t index[0,0]           = {index[0,0]}")
 
         nn_index = index.clone().detach().long()
-        print(f"[FIND_NN]:\t\t nn_index[0,0]        = {nn_index[0,0]}")
-        print(f"[FIND_NN]:\t\t ptscloud[index[0,0]] = {ptscloud[nn_index[0,0]]}")
-        print("--"* 80)
+        # print(f"[FIND_NN]:\t\t nn_index[0,0]        = {nn_index[0,0]}")
+        # print(f"[FIND_NN]:\t\t ptscloud[index[0,0]] = {ptscloud[nn_index[0,0]]}")
+        # print("--"* 80)
                 
         return nn_index
 
