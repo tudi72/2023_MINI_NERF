@@ -34,7 +34,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
 from tqdm import tqdm, trange
-
+import traceback
 import matplotlib.pyplot as plt
 
 from run_nerf_helpers import *
@@ -93,8 +93,8 @@ def raw2outputs(raw, z_vals, rays_d):
         z_vals = z_vals.repeat(rays_d.shape[0],1)                                           # (1024,200)
         delta_n = z_vals * rays_d_magnitude
 
-        sigma_n = raw[:,:,3]
-        c_n = raw[:,:,:3]
+        sigma_n = raw[:,:,3].relu()
+        c_n = raw[:,:,:3].sigmoid()
 
         # print("--"* 80)
         # print(f"[RAW2OUTPUT]:\t\t   t_n[0,0:5]        = {z_vals[0,-5:]}")
@@ -231,7 +231,7 @@ def render_rays_discrete(ray_steps, rays_o, rays_d, N_samples, pt_cloud, rgb_val
         print("--" * 70)
     return rgb_val_rays
 
-def regularize_rgb_sigma(point_cloud_indices, rgb_values, sigma_values):
+def regularize_rgb_sigma(iteration,point_cloud_indices, rgb_values, sigma_values):
     """
     point_cloud: your point cloud of size (KX3).
     rgb_values: rgb values of the points in the point cloud of size (KX3).
@@ -248,40 +248,52 @@ def regularize_rgb_sigma(point_cloud_indices, rgb_values, sigma_values):
     """
     l2_rgb, l2_sigma = None, None
     try:
-        print("\n")
-        print("--" * 70)
-        print(f"[INFO.regularize]:\t\t pt_cloud_indices  = {point_cloud_indices.shape}")        
-
-        # 1. [regularize]: sample subset of size M
         
-        M =  5_000                                                                                                    # M      <-- size of cloudpoint subset
-        subset = torch.randint(point_cloud_indices.shape[0],(M,))                                                     # subset <-- random indexes  
-        adj = subset + 1                                                                                              # adj    <-- subset + 1 (adjacent neighbors k+1)
+        # 1. [regularize]: sample subset of size M
+        K = point_cloud_indices.shape[0]
+        M =  10_000                                                                                             # M      <-- size of cloudpoint subset
+        subset    = torch.randint(low = 1,high = K-1,size=(M,))                                                 # subset <-- random indexes  
+        direction = torch.randint(low =-1,high =   1,size=(M,3))                                                # dir    <-- adjacent neighbor (m,n,p) all in [-1,0,1]
+        indices = torch.empty((M,3),dtype=torch.long)
 
-        print(f"[INFO.regularize]:\t\t  subset[0]       = {subset[0]}")
-        print(f"[INFO.regularize]:\t\t     adj[0]       = {adj[0]}")
+        # 1.2 [regularize]: transform random subset K ---> (I,J,K) space
+        indices[...,2] = (subset % 200).long()
+        indices[...,1] = (subset // 200  // 200 % 200).long()
+        indices[...,0] = (subset // 200 % 200).long()
 
+        # 1.3 [regularize]: neighbors receive sum of pixel and direction (index + direction to next) 
+        adj = indices + direction                                                                                # adj    <-- subset + 1 (adjacent neighbors k+1)
+        adj    =    adj[..., 0] * 200 +    adj[..., 1] * 200 * 200 +    adj[..., 2]
+        
+        # 1.4 [regularize]: we take the values of the computed indices for RGB and sigma
         rgb, rgb_adj = rgb_values[subset], rgb_values[adj]                                                          # rgb subset values
         sigma, sigma_adj = sigma_values[subset],sigma_values[adj]
-
-        print(f"[INFO.regularize]:\t\t   rgb_shape     = {rgb.shape}")
-        print(f"[INFO.regularize]:\t\t sigma_shape     = {sigma.shape}")
-        print(f"[INFO.regularize]:\t\t     rgb[0]      = {rgb_values[subset[0]]}")
-        print(f"[INFO.regularize]:\t\t   sigma[0]      = {sigma_values[subset[0]]}")
-
 
         # 2. [regularize]: difference c[i,j,k] - c[m,n,p]
         l2_rgb = torch.sum(torch.square(torch.norm(rgb - rgb_adj, dim=-1)))
 
-        # # 4. [regularize]: differnece theta[i,j,k] - theta[m,n,p]
+        # 4. [regularize]: differnece theta[i,j,k] - theta[m,n,p]
         l2_sigma = torch.sum(torch.square(sigma - sigma_adj))
         
-        print(f"[INFO.regularize]:\t\t l2_rgb   = {l2_rgb}")
-        print(f"[INFO.regularize]:\t\t l2_sigma = {l2_sigma}")
-        print("--" * 70)
+        if iteration%10==0:
+            tqdm.write("--" * 70)
+            tqdm.write(f"[INFO.regularize]:\t\t rgb_values_shape  = {rgb_values.shape}")        
+            tqdm.write(f"[INFO.regularize]:\t\tsigma_values_shape = {sigma_values.shape}")
+            tqdm.write(f"[INFO.regularize]:\t\t direction_shape   = {direction.shape}")        
+            tqdm.write(f"[INFO.regularize]:\t\t subset_indices    = {subset.shape}")        
+            tqdm.write(f"[INFO.regularize]:\t\t adj               = {adj.shape}")        
+
+            tqdm.write(f"[INFO.regularize]:\t\t       subset[0]   = {subset[0]}")        
+            tqdm.write(f"[INFO.regularize]:\t\t    direction[0]   = {direction[0]}")        
+            tqdm.write(f"[INFO.regularize]:\t\t          adj[0]   = {adj[0]}")        
+            
+            tqdm.write(f"[INFO.regularize]:\t\t        l2_rgb     = {l2_rgb}")
+            tqdm.write(f"[INFO.regularize]:\t\t        l2_sigma   = {l2_sigma}")
+            tqdm.write("--" * 70)
 
     except Exception as e: 
-        print(f"[ERROR.regularize_rgb_sigma]: {e}")
+        tqdm.write(f"[ERROR.regularize_rgb_sigma]: {e}")
+        traceback.print_exc(limit=0, file=sys.stdout)
 
     return l2_rgb, l2_sigma
 
@@ -404,7 +416,7 @@ def train():
             # do not make any change          
             optimizer.zero_grad()
             img_loss = img2mse(rgb_map, target_s)
-            reg_loss_rgb, reg_loss_sigma = regularize_rgb_sigma(point_cloud_indices = pt_cloud_indices, rgb_values= rgb_val , sigma_values = sigma_val) # DO NOT FORGET TO CHANGE THIS
+            reg_loss_rgb, reg_loss_sigma = regularize_rgb_sigma(iteration = i,point_cloud_indices = pt_cloud_indices, rgb_values= rgb_val, sigma_values = sigma_val) # DO NOT FORGET TO CHANGE THIS
             loss = img_loss + lambda_rgb*reg_loss_rgb + lambda_sigma*reg_loss_sigma # --> this is the loss we minimize
             psnr = mse2psnr(img_loss)
 
