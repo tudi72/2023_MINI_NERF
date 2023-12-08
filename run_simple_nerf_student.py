@@ -270,12 +270,12 @@ def regularize_rgb_sigma(iteration,point_cloud_indices, rgb_values, sigma_values
         sigma, sigma_adj = sigma_values[subset],sigma_values[adj]
 
         # 2. [regularize]: difference c[i,j,k] - c[m,n,p]
-        l2_rgb = torch.sum(torch.square(torch.norm(rgb - rgb_adj, dim=-1)))
+        l2_rgb = torch.mean(torch.square(torch.norm(rgb - rgb_adj, dim=-1)))
 
         # 4. [regularize]: differnece theta[i,j,k] - theta[m,n,p]
-        l2_sigma = torch.sum(torch.square(sigma - sigma_adj))
+        l2_sigma = torch.mean(torch.square(sigma - sigma_adj))
         
-        if iteration%10==0:
+        if iteration%1000==0:
             tqdm.write("--" * 70)
             tqdm.write(f"[INFO.regularize]:\t\t rgb_values_shape  = {rgb_values.shape}")        
             tqdm.write(f"[INFO.regularize]:\t\tsigma_values_shape = {sigma_values.shape}")
@@ -306,7 +306,7 @@ def train():
     '''
     N_rand = 1024 # number of rays that are use during the training, IF YOU DO NOT HAVE ENOUGH RAM YOU CAN DECREASE IT BUT DO NOT NOT FORGET TO INCREASE THE N_iter!!!!
     precrop_frac = 0.9 # do not change
-    start , N_iters = 0, 1_000
+    start , N_iters = 0, 10_000
     N_samples = 200 # numebr of samples along the ray
     precrop_iters = 0
     lrate = 5e-3 # learning rate
@@ -482,5 +482,4 @@ def train():
 
 if __name__=='__main__':
     # torch.set_default_tensor_type('torch.cuda.FloatTensor') # UNCOMMENT THIS IF YOU NEED TO RUN IT IN GPU
-
     train()
