@@ -3,7 +3,7 @@ Method for synthesizing novel views of complex scenes by optimizing an underlyin
 views. Algorithm represents a scene using a fully-connected (nonconvolutional) deep network, whose input is a single continuous 5D coordinate (spatial location $(x, y, z)$ and viewing direction $(\theta, \phi)$) and whose
 output is the volume density and view-dependent emitted radiance at
 that spatial location.  
-![Alt text](image-4.png)
+![Alt text](image-5.png)
 
 ## Objective Function
 We try to train a nerf with an objective task of minimizing the **MSE**. Furthermore, we add regularization for smoothing the neighboring colors $c_n$ and to enforce smoothness and consistency in the predicted density $\sigma$. The loss is given by the following formula.  
