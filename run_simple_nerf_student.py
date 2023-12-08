@@ -248,27 +248,59 @@ def regularize_rgb_sigma(point_cloud, rgb_values, sigma_values):
     """
     l2_rgb, l2_sigma = None, None
     try:
+        print("\n")
+        print("--" * 70)
 
         # 1. [regularize]: sample subset of size M
-        M =  1_000                                                      # M <-- size of cloudpoint subset
-        random_permutation = torch.randperm(point_cloud.shape[0]-1)     # random permutation of indexes      
-        s_index = random_permutation[:M]                                # s_index <-- random indexes subset
-        s_index_adj = random_permutation[:M] + 1                        # s_index_adj <-- the neighbor (i,j,k+1)  
-        rgb_s = rgb_values[s_index]                                     # rgb subset
-        sigma_s = sigma_values[s_index]                                 # sigma subset
-        rgb_adj = rgb_values[s_index_adj]                               # rgb subset for neighbors
-        sigma_adj = rgb_values[s_index_adj]                             # sigma subset for neighbors
         
+        M =  100                                                                                                    # M <-- size of cloudpoint subset
+        random_i = torch.randint(0,199,(M,))                                                                        # random permutation of indexes  
+        random_j = torch.randint(0,199,(M,))                                                                        # random permutation of indexes  
+        random_k = torch.randint(0,199,(M,))                                                                        # random permutation of indexes  
+        
+
+
+        subset_i, subset_j, subset_k = random_i[:M], random_j[:M],random_k[:M]                                      # s_index <-- random indexes subset
+        adj_i,adj_j,adj_k = subset_i, subset_j, subset_k + 1                                                        # s_index_adj <-- the neighbor (i,j,k+1)  
+        
+        grid1,grid2,grid3 = torch.meshgrid(subset_i, subset_j, subset_k)
+        subset = torch.stack((grid1,grid2,grid3),dim=-1)
+        subset = subset.reshape([-1,3])
+
+        grid1,grid2,grid3 = torch.meshgrid(adj_i, adj_j, adj_k)
+        adj = torch.stack((grid1,grid2,grid3),dim=-1)
+        adj = adj.reshape([-1,3])
+
+        print(f"[INFO.regularize]:\t\t subset[0]       = {subset[0]}")
+        print(f"[INFO.regularize]:\t\t    adj[0]       = {adj[0]}")
+
+        rgb_i,rgb_j,rgb_k = rgb_values[subset_i], rgb_values[subset_j], rgb_values[subset_k]                        # rgb subset values
+        rgb_adj_i,rgb_adj_j,rgb_adj_k = rgb_values[adj_i], rgb_values[adj_j], rgb_values[adj_k]                     # rgb of neighboring values
+
+        sigma_i, sigma_j,sigma_k = sigma_values[subset_i],sigma_values[subset_j],sigma_values[subset_k]             # sigma subset values
+        sigma_adj_i, sigma_adj_j,sigma_adj_k = sigma_values[adj_i],sigma_values[adj_j],sigma_values[adj_k]          # sigma of neighboring values
+
+        print(f"[INFO.regularize]:\t\t rgb_i_shape      = {rgb_i.shape}")
+        print(f"[INFO.regularize]:\t\t rgb_adj_i_shape  = {rgb_adj_i.shape}")
+        print(f"[INFO.regularize]:\t\t sigma_i_shape    = {sigma_i.shape}")
+        print(f"[INFO.regularize]:\t\t sigma_adj_i_shape= {sigma_adj_i.shape}")
+
+
         # 2. [regularize]: difference c[i,j,k] - c[m,n,p]
-        l2_rgb = torch.sum(torch.square(torch.norm(rgb_s - rgb_adj, dim=-1)))
+        l2_rgb_i = torch.sum(torch.square(torch.norm(rgb_i - rgb_adj_i, dim=-1)))
+        l2_rgb_j = torch.sum(torch.square(torch.norm(rgb_j - rgb_adj_j, dim=-1)))
+        l2_rgb_k = torch.sum(torch.square(torch.norm(rgb_k - rgb_adj_k, dim=-1)))
 
-        # 4. [regularize]: differnece theta[i,j,k] - theta[m,n,p]
-        l2_sigma = torch.sum(torch.square(sigma_s - sigma_adj))
+        # # 4. [regularize]: differnece theta[i,j,k] - theta[m,n,p]
+        l2_sigma_i = torch.sum(torch.square(sigma_i - sigma_adj_i))
+        l2_sigma_j = torch.sum(torch.square(sigma_j - sigma_adj_j))
+        l2_sigma_k = torch.sum(torch.square(sigma_k - sigma_adj_k))
 
-        # print("\n")
-        # print("--" * 70)
-        # print(f"[INFO.regularize]:\t\t l2_rgb   = {l2_rgb}")
-        # print(f"[INFO.regularize]:\t\t l2_sigma = {l2_sigma}")
+        # l2_rgb = l2_rgb_i + l2_rgb_j + l2_rgb_k
+        # l2_sigma = l2_sigma_i + l2_sigma_j + l2_sigma_k        
+        
+        print(f"[INFO.regularize]:\t\t l2_rgb   = {l2_rgb}")
+        print(f"[INFO.regularize]:\t\t l2_sigma = {l2_sigma}")
 
     except Exception as e: 
         print(f"[ERROR.regularize_rgb_sigma]: {e}")
