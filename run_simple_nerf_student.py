@@ -231,7 +231,7 @@ def render_rays_discrete(ray_steps, rays_o, rays_d, N_samples, pt_cloud, rgb_val
         print("--" * 70)
     return rgb_val_rays
 
-def regularize_rgb_sigma(point_cloud, rgb_values, sigma_values):
+def regularize_rgb_sigma(point_cloud_indices, rgb_values, sigma_values):
     """
     point_cloud: your point cloud of size (KX3).
     rgb_values: rgb values of the points in the point cloud of size (KX3).
@@ -250,36 +250,24 @@ def regularize_rgb_sigma(point_cloud, rgb_values, sigma_values):
     try:
         print("\n")
         print("--" * 70)
+        print(f"[INFO.regularize]:\t\t pt_cloud_indices  = {point_cloud_indices.shape}")        
 
         # 1. [regularize]: sample subset of size M
         
-        M =  100                                                                                                    # M <-- size of cloudpoint subset
-        random_i = torch.randint(0,199,(M,))                                                                        # random permutation of indexes  
-        random_j = torch.randint(0,199,(M,))                                                                        # random permutation of indexes  
-        random_k = torch.randint(0,199,(M,))                                                                        # random permutation of indexes  
-        
+        M =  5_000                                                                                                    # M      <-- size of cloudpoint subset
+        subset = torch.randint(point_cloud_indices.shape[0],(M,))                                                     # subset <-- random indexes  
+        adj = subset + 1                                                                                              # adj    <-- subset + 1 (adjacent neighbors k+1)
 
-        subset_i, subset_j, subset_k = random_i[:M], random_j[:M],random_k[:M]                                      # s_index <-- random indexes subset
-        adj_i,adj_j,adj_k = subset_i, subset_j, subset_k + 1                                                        # s_index_adj <-- the neighbor (i,j,k+1)  
-        
-        grid1,grid2,grid3 = torch.meshgrid(subset_i, subset_j, subset_k)
-        subset = torch.stack((grid1,grid2,grid3),dim=-1)
-        subset = subset.reshape([-1,3])
-
-        grid1,grid2,grid3 = torch.meshgrid(adj_i, adj_j, adj_k)
-        adj = torch.stack((grid1,grid2,grid3),dim=-1)
-        adj = adj.reshape([-1,3])
-
-        print(f"[INFO.regularize]:\t\t subset[0]       = {subset[0]}")
-        print(f"[INFO.regularize]:\t\t    adj[0]       = {adj[0]}")
+        print(f"[INFO.regularize]:\t\t  subset[0]       = {subset[0]}")
+        print(f"[INFO.regularize]:\t\t     adj[0]       = {adj[0]}")
 
         rgb, rgb_adj = rgb_values[subset], rgb_values[adj]                                                          # rgb subset values
         sigma, sigma_adj = sigma_values[subset],sigma_values[adj]
 
-        print(f"[INFO.regularize]:\t\t rgb_shape      = {rgb.shape}")
-        print(f"[INFO.regularize]:\t\t sigma_shape    = {sigma.shape}")
-        print(f"[INFO.regularize]:\t\t rgb[0]         = {rgb[subset[0]]}")
-        print(f"[INFO.regularize]:\t\t sigma[0]       = {sigma[subset[0]]}")
+        print(f"[INFO.regularize]:\t\t   rgb_shape     = {rgb.shape}")
+        print(f"[INFO.regularize]:\t\t sigma_shape     = {sigma.shape}")
+        print(f"[INFO.regularize]:\t\t     rgb[0]      = {rgb_values[subset[0]]}")
+        print(f"[INFO.regularize]:\t\t   sigma[0]      = {sigma_values[subset[0]]}")
 
 
         # 2. [regularize]: difference c[i,j,k] - c[m,n,p]
@@ -290,6 +278,7 @@ def regularize_rgb_sigma(point_cloud, rgb_values, sigma_values):
         
         print(f"[INFO.regularize]:\t\t l2_rgb   = {l2_rgb}")
         print(f"[INFO.regularize]:\t\t l2_sigma = {l2_sigma}")
+        print("--" * 70)
 
     except Exception as e: 
         print(f"[ERROR.regularize_rgb_sigma]: {e}")
@@ -415,7 +404,7 @@ def train():
             # do not make any change          
             optimizer.zero_grad()
             img_loss = img2mse(rgb_map, target_s)
-            reg_loss_rgb, reg_loss_sigma = regularize_rgb_sigma(point_cloud = pt_cloud, rgb_values= rgb_val , sigma_values = sigma_val) # DO NOT FORGET TO CHANGE THIS
+            reg_loss_rgb, reg_loss_sigma = regularize_rgb_sigma(point_cloud_indices = pt_cloud_indices, rgb_values= rgb_val , sigma_values = sigma_val) # DO NOT FORGET TO CHANGE THIS
             loss = img_loss + lambda_rgb*reg_loss_rgb + lambda_sigma*reg_loss_sigma # --> this is the loss we minimize
             psnr = mse2psnr(img_loss)
 

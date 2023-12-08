@@ -30,3 +30,16 @@ $$
 In the code below, we can observe how the step function $t_n$ is created and then multiplied with the ray's direction as a magnitude.
 
 ![Alt text](image-1.png)
+
+## 3. Regularization 
+
+We compute the regularization of the color and the depth sigma by substracting a neighbor. The neighbor chosen si the immediate $k+1$ next element from the **point cloud indices**.   
+
+$$
+\begin{align*}
+    L_{reg colour} &= \sum_{i,j,k}{|c[i,j,k]-c[i,j,k+1]|^2} \\    
+    L_{reg \sigma} &= \sum_{i,j,k}{|\sigma[i,j,k]-\sigma[i,j,k+1]|^2}
+\end{align*}
+$$
+
+![Alt text](image-2.png)
