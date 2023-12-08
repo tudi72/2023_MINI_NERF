@@ -259,7 +259,6 @@ def regularize_rgb_sigma(point_cloud, rgb_values, sigma_values):
         random_k = torch.randint(0,199,(M,))                                                                        # random permutation of indexes  
         
 
-
         subset_i, subset_j, subset_k = random_i[:M], random_j[:M],random_k[:M]                                      # s_index <-- random indexes subset
         adj_i,adj_j,adj_k = subset_i, subset_j, subset_k + 1                                                        # s_index_adj <-- the neighbor (i,j,k+1)  
         
@@ -274,30 +273,20 @@ def regularize_rgb_sigma(point_cloud, rgb_values, sigma_values):
         print(f"[INFO.regularize]:\t\t subset[0]       = {subset[0]}")
         print(f"[INFO.regularize]:\t\t    adj[0]       = {adj[0]}")
 
-        rgb_i,rgb_j,rgb_k = rgb_values[subset_i], rgb_values[subset_j], rgb_values[subset_k]                        # rgb subset values
-        rgb_adj_i,rgb_adj_j,rgb_adj_k = rgb_values[adj_i], rgb_values[adj_j], rgb_values[adj_k]                     # rgb of neighboring values
+        rgb, rgb_adj = rgb_values[subset], rgb_values[adj]                                                          # rgb subset values
+        sigma, sigma_adj = sigma_values[subset],sigma_values[adj]
 
-        sigma_i, sigma_j,sigma_k = sigma_values[subset_i],sigma_values[subset_j],sigma_values[subset_k]             # sigma subset values
-        sigma_adj_i, sigma_adj_j,sigma_adj_k = sigma_values[adj_i],sigma_values[adj_j],sigma_values[adj_k]          # sigma of neighboring values
-
-        print(f"[INFO.regularize]:\t\t rgb_i_shape      = {rgb_i.shape}")
-        print(f"[INFO.regularize]:\t\t rgb_adj_i_shape  = {rgb_adj_i.shape}")
-        print(f"[INFO.regularize]:\t\t sigma_i_shape    = {sigma_i.shape}")
-        print(f"[INFO.regularize]:\t\t sigma_adj_i_shape= {sigma_adj_i.shape}")
+        print(f"[INFO.regularize]:\t\t rgb_shape      = {rgb.shape}")
+        print(f"[INFO.regularize]:\t\t sigma_shape    = {sigma.shape}")
+        print(f"[INFO.regularize]:\t\t rgb[0]         = {rgb[subset[0]]}")
+        print(f"[INFO.regularize]:\t\t sigma[0]       = {sigma[subset[0]]}")
 
 
         # 2. [regularize]: difference c[i,j,k] - c[m,n,p]
-        l2_rgb_i = torch.sum(torch.square(torch.norm(rgb_i - rgb_adj_i, dim=-1)))
-        l2_rgb_j = torch.sum(torch.square(torch.norm(rgb_j - rgb_adj_j, dim=-1)))
-        l2_rgb_k = torch.sum(torch.square(torch.norm(rgb_k - rgb_adj_k, dim=-1)))
+        l2_rgb = torch.sum(torch.square(torch.norm(rgb - rgb_adj, dim=-1)))
 
         # # 4. [regularize]: differnece theta[i,j,k] - theta[m,n,p]
-        l2_sigma_i = torch.sum(torch.square(sigma_i - sigma_adj_i))
-        l2_sigma_j = torch.sum(torch.square(sigma_j - sigma_adj_j))
-        l2_sigma_k = torch.sum(torch.square(sigma_k - sigma_adj_k))
-
-        # l2_rgb = l2_rgb_i + l2_rgb_j + l2_rgb_k
-        # l2_sigma = l2_sigma_i + l2_sigma_j + l2_sigma_k        
+        l2_sigma = torch.sum(torch.square(sigma - sigma_adj))
         
         print(f"[INFO.regularize]:\t\t l2_rgb   = {l2_rgb}")
         print(f"[INFO.regularize]:\t\t l2_sigma = {l2_sigma}")
