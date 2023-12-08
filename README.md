@@ -1,3 +1,23 @@
+# NERF
+Method for synthesizing novel views of complex scenes by optimizing an underlying continuous volumetric scene function using a sparse set of input
+views. Algorithm represents a scene using a fully-connected (nonconvolutional) deep network, whose input is a single continuous 5D coordinate (spatial location $(x, y, z)$ and viewing direction $(\theta, \phi)$) and whose
+output is the volume density and view-dependent emitted radiance at
+that spatial location.  
+![Alt text](image-4.png)
+
+## Objective Function
+We try to train a nerf with an objective task of minimizing the **MSE**. Furthermore, we add regularization for smoothing the neighboring colors $c_n$ and to enforce smoothness and consistency in the predicted density $\sigma$. The loss is given by the following formula.  
+
+$$
+\begin{align*}
+    \mathcal{L}_NERF = \|\|y - \hat{y} \|\|^2 \lambda_{rgb}\cdot L_{color}() + \lambda_{\sigma}\cdot L_{\sigma} 
+\end{align*}
+$$  
+
+In the figure below, we observe the loss over 5000 iterations when it reaches a plateau. 
+
+![Alt text](image-3.png)
+
 ## 1. Find Nearest Neighbor
 We compute the $\textbf{Nearest Neighbor}$ using the following formula for a ray $R \in \mathbb{R}^{rays}$.  
 

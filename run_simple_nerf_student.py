@@ -93,30 +93,19 @@ def raw2outputs(raw, z_vals, rays_d):
         z_vals = z_vals.repeat(rays_d.shape[0],1)                                           # (1024,200)
         delta_n = z_vals * rays_d_magnitude
 
+        # extracting positive depths and colors
         sigma_n = raw[:,:,3].relu()
         c_n = raw[:,:,:3].sigmoid()
-
-        # print("--"* 80)
-        # print(f"[RAW2OUTPUT]:\t\t   t_n[0,0:5]        = {z_vals[0,-5:]}")
-        # print(f"[RAW2OUTPUT]:\t\t  ||rays_d[0]||      = {rays_d_magnitude[0]}")
-        # print(f"[RAW2OUTPUT]:\t\t  shape(delta)       = {delta_n.shape}  .... shape(sigma_n)= {sigma_n.shape}")
 
         # steps T_n = exp(-Σσ_n * δ_n)
         T_n =  torch.exp(- torch.cumsum(sigma_n * delta_n,dim=-1))                           # (1024,200)
 
-        # print(f"[RAW2OUTPUT]:\t\t   sigma_n[0,:5]        = {sigma_n[0,:5]} .... shape(T_n) = {sigma_n.shape}")
-        # print(f"[RAW2OUTPUT]:\t\t   delta_n[0,:5]        = {delta_n[0,:5]} .... shape(T_n) = {delta_n.shape}")
-        # print(f"[RAW2OUTPUT]:\t\t   T_n_n  [0,:5]        = {T_n_n[0,:5]} .... shape(T_n) = {T_n_n.shape}")
-        # print(f"[RAW2OUTPUT]:\t\t   T_n    [0,:5]        = {T_n[0,:5]} .... shape(T_n) = {T_n.shape}")
-
+        # T_n = formula 
         weights = (T_n * (1.0 - torch.exp(-sigma_n * delta_n))).unsqueeze(2)          # (1024, 200) size of (num_rays, num_samples along ray).
-        # print(f"[RAW2OUTPUT]:\t\t   shape(weights) = {weights.shape}")
         
         rgb_map = torch.sum(weights * c_n,dim = 1)
-        # print(f"[RAW2OUTPUT]:\t\t   shape(rgb_map) = {rgb_map.shape}")
 
         acc_map = torch.sum(weights.squeeze(2), -1)
-        # print(f"[RAW2OUTPUT]:\t\t   shape(rgb_map) = {rgb_map.shape}")
 
         if True: # this MUST BE ALWAYS TRUE in your case
             '''
@@ -125,10 +114,7 @@ def raw2outputs(raw, z_vals, rays_d):
             on the other hand if the acc_map is 1 (the presence of the object) the last term will be zero!
             '''
             rgb_map = rgb_map + (1.-acc_map[...,None])
-        # print(f"[RAW2OUTPUT]:\t\t   shape(rgb_map) = {rgb_map.shape}")
     
-        # print(f"[RAW2OUTPUT]:\t\t   shape(rgb_map) = {rgb_map.shape}")
-        # print("--"* 80)
         return rgb_map
 
     except Exception as e:
@@ -148,25 +134,17 @@ def find_nn(pts, ptscloud):
     try:
         # 1. step <-- distance between two consequtive cloud points        
         step_distance = (ptscloud[1] - ptscloud[0])[2]
-        # print("--"* 80)
-        # print(f"[FIND_NN]:\t\t STEP                 = {step_distance}")
-        # print(f"[FIND_NN]:\t\t pts[0,0]             = {pts[0,0]}")
-
+        
         # 2. [find_NN]:  d(1st cloudpoints, ray) = ?
         distance = torch.round(pts - ptscloud[0],decimals=3)
-        # print(f"[FIND_NN]:\t\t distance[0,0]        = {distance[0,0]}")
 
         # 3. [find_NN]:  index ~ closest ptsCloud  
         ijk_index = torch.round(distance/step_distance,decimals=0)
-        # print(f"[FIND_NN]:\t\t ijk_index[0,0]       = {ijk_index[0,0]}")
-        # 4. [find_NN]: nn_index <--- (i,j,k) append neighbor to list 
+
+        # 4. [find_NN]:  from (i,j,k) ----> K space 
         index = ijk_index[..., 0] * 200 + ijk_index[..., 1] * 200 * 200 + ijk_index[..., 2]
-        # print(f"[FIND_NN]:\t\t index[0,0]           = {index[0,0]}")
 
         nn_index = index.clone().detach().long()
-        # print(f"[FIND_NN]:\t\t nn_index[0,0]        = {nn_index[0,0]}")
-        # print(f"[FIND_NN]:\t\t ptscloud[index[0,0]] = {ptscloud[nn_index[0,0]]}")
-        # print("--"* 80)
                 
         return nn_index
 
@@ -252,41 +230,32 @@ def regularize_rgb_sigma(iteration,point_cloud_indices, rgb_values, sigma_values
         # 1. [regularize]: sample subset of size M
         K = point_cloud_indices.shape[0]
         M =  10_000                                                                                             # M      <-- size of cloudpoint subset
-        subset    = torch.randint(low = 1,high = K-1,size=(M,))                                                 # subset <-- random indexes  
-        direction = torch.randint(low =-1,high =   1,size=(M,3))                                                # dir    <-- adjacent neighbor (m,n,p) all in [-1,0,1]
-        indices = torch.empty((M,3),dtype=torch.long)
-
-        # 1.2 [regularize]: transform random subset K ---> (I,J,K) space
-        indices[...,2] = (subset % 200).long()
-        indices[...,1] = (subset // 200  // 200 % 200).long()
-        indices[...,0] = (subset // 200 % 200).long()
-
-        # 1.3 [regularize]: neighbors receive sum of pixel and direction (index + direction to next) 
-        adj = indices + direction                                                                                # adj    <-- subset + 1 (adjacent neighbors k+1)
-        adj    =    adj[..., 0] * 200 +    adj[..., 1] * 200 * 200 +    adj[..., 2]
+        subset    = torch.randint(low = 1,high = K-1,size=(M,1))                                                 # subset <-- random indexes  
         
-        # 1.4 [regularize]: we take the values of the computed indices for RGB and sigma
-        rgb, rgb_adj = rgb_values[subset], rgb_values[adj]                                                          # rgb subset values
-        sigma, sigma_adj = sigma_values[subset],sigma_values[adj]
+        # 1.2 all directions generated for an index
+        direction = torch.cartesian_prod(torch.tensor([-1, 0, 1]), torch.tensor([-1, 0, 1]), torch.tensor([-1, 0, 1]))
+        
+        # 1.3 exclude the position of the pixel itself
+        direction = direction[(direction != 0).any(dim=1)]
 
-        # 2. [regularize]: difference c[i,j,k] - c[m,n,p]
-        l2_rgb = torch.mean(torch.square(torch.norm(rgb - rgb_adj, dim=-1)))
+        # 1.4 directions (i,j,k) ---> K domain 
+        direction =    direction[..., 0] * 200 + direction[..., 1] * 200 * 200 + direction[..., 2]
+        
+        # 2 [regularize]: neighbors receive sum of pixel and direction (index + direction to next)
+        # adj    <-- subset + 1 (adjacent neighbors k+1) 
+        adj = subset + direction              
 
-        # 4. [regularize]: differnece theta[i,j,k] - theta[m,n,p]
-        l2_sigma = torch.mean(torch.square(sigma - sigma_adj))
+        # adj    <-- adj [0,K] all other values are cut  
+        adj = torch.clamp(adj,min=0,max=K-1)  
+        
+        # 2 [regularize]: difference c[i,j,k] - c[m,n,p], where m,n,p are all neighbors
+        l2_rgb= torch.mean(torch.sum(torch.square(torch.norm(rgb_values[adj] - rgb_values[subset],dim=2)),dim=1))
+
+        # 3. [regularize]: differnece theta[i,j,k] - theta[m,n,p]
+        l2_sigma= torch.mean(torch.sum(torch.square(sigma_values[adj] - sigma_values[subset]),dim=1))
         
         if iteration%1000==0:
             tqdm.write("--" * 70)
-            tqdm.write(f"[INFO.regularize]:\t\t rgb_values_shape  = {rgb_values.shape}")        
-            tqdm.write(f"[INFO.regularize]:\t\tsigma_values_shape = {sigma_values.shape}")
-            tqdm.write(f"[INFO.regularize]:\t\t direction_shape   = {direction.shape}")        
-            tqdm.write(f"[INFO.regularize]:\t\t subset_indices    = {subset.shape}")        
-            tqdm.write(f"[INFO.regularize]:\t\t adj               = {adj.shape}")        
-
-            tqdm.write(f"[INFO.regularize]:\t\t       subset[0]   = {subset[0]}")        
-            tqdm.write(f"[INFO.regularize]:\t\t    direction[0]   = {direction[0]}")        
-            tqdm.write(f"[INFO.regularize]:\t\t          adj[0]   = {adj[0]}")        
-            
             tqdm.write(f"[INFO.regularize]:\t\t        l2_rgb     = {l2_rgb}")
             tqdm.write(f"[INFO.regularize]:\t\t        l2_sigma   = {l2_sigma}")
             tqdm.write("--" * 70)
@@ -306,7 +275,7 @@ def train():
     '''
     N_rand = 1024 # number of rays that are use during the training, IF YOU DO NOT HAVE ENOUGH RAM YOU CAN DECREASE IT BUT DO NOT NOT FORGET TO INCREASE THE N_iter!!!!
     precrop_frac = 0.9 # do not change
-    start , N_iters = 0, 10_000
+    start , N_iters = 0, 5_000
     N_samples = 200 # numebr of samples along the ray
     precrop_iters = 0
     lrate = 5e-3 # learning rate
