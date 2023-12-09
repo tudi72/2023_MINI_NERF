@@ -10,7 +10,7 @@ We try to train a nerf with an objective task of minimizing the **MSE**. Further
 
 $$
 \begin{align*}
-    L_{NERF} = \|\|y - \hat{y} \|\|^2 \lambda_{rgb}\cdot L_{color}() + \lambda_{\sigma}\cdot L_{\sigma} 
+    L_{NERF} = \|\|y - \hat{y} \|\|^2 + \lambda_{rgb}\cdot L_{color} + \lambda_{\sigma}\cdot L_{\sigma} 
 \end{align*}
 $$  
 
