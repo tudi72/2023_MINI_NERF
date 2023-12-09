@@ -399,7 +399,7 @@ def train():
         if i%1000==0: # 
             '''
             YOU DONO NOT NEED TO MAKE ANY CHANGE HERE EXCEPT  render_rays_discrete FUNCTION !!!!!
-            at 1000-th iteraion the bulldozer should be appeared when trained with the default hyperparameters
+            at 1000-th iteration the bulldozer should be appeared when trained with the default hyperparameters
             We save some intermediate images.
             The first 100 images are from the training set and the rest are novel views!. To speed up the generation we renderer every 8th pose/image
             '''
