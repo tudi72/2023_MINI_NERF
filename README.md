@@ -1,6 +1,7 @@
 # NERF
 
-![GIF Example](c:\Users\tudor\Documents\ShareX\Screenshots\2023-12\Code_AUkU1CPioc.gif)
+![Code_AUkU1CPioc](https://media.github.unibe.ch/user/294/files/e68a44c2-2ec0-4356-9c34-66d88f0dc2fd)
+
 
 Method for synthesizing novel views of complex scenes by optimizing an underlying continuous volumetric scene function using a sparse set of input
 views. Algorithm represents a scene using a fully-connected (nonconvolutional) deep network, whose input is a single continuous 5D coordinate (spatial location $(x, y, z)$ and viewing direction $(\theta, \phi)$) and whose
