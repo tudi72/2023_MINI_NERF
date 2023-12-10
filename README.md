@@ -1,8 +1,48 @@
 # NERF
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>3D Mesh Viewer</title>
+  <script type="module">
+    import * as THREE from 'https://threejs.org/build/three.module.js';
+    import {OBJLoader} from 'https://threejs.org/examples/jsm/loaders/OBJLoader.js';
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    const loader = new OBJLoader();
+    loader.load('logs\resources\gt_views\mesh.obj', (object) => {
+      scene.add(object);
+    });
+
+    camera.position.z = 5;
+
+    const animate = function () {
+      requestAnimationFrame(animate);
+
+      // Add any animation or updates here
+
+      renderer.render(scene, camera);
+    };
+
+    animate();
+  </script>
+</head>
+<body>
+</body>
+</html>
+
 Method for synthesizing novel views of complex scenes by optimizing an underlying continuous volumetric scene function using a sparse set of input
 views. Algorithm represents a scene using a fully-connected (nonconvolutional) deep network, whose input is a single continuous 5D coordinate (spatial location $(x, y, z)$ and viewing direction $(\theta, \phi)$) and whose
 output is the volume density and view-dependent emitted radiance at
 that spatial location.  
+
 ![Alt text](image-5.png)
 
 ## Objective Function

@@ -233,10 +233,11 @@ def regularize_rgb_sigma(iteration,point_cloud_indices, rgb_values, sigma_values
         subset    = torch.randint(low = 1,high = K-1,size=(M,1))                                                 # subset <-- random indexes  
         
         # 1.2 all directions generated for an index
-        direction = torch.cartesian_prod(torch.tensor([-1, 0, 1]), torch.tensor([-1, 0, 1]), torch.tensor([-1, 0, 1]))
+        direction = torch.randint(-1, 2, (M, 3), dtype=torch.long)
+        # direction = torch.cartesian_prod(torch.tensor([-1, 0, 1]), torch.tensor([-1, 0, 1]), torch.tensor([-1, 0, 1]))
         
         # 1.3 exclude the position of the pixel itself
-        direction = direction[(direction != 0).any(dim=1)]
+        # direction = direction[(direction != 0).any(dim=1)]
 
         # 1.4 directions (i,j,k) ---> K domain 
         direction =    direction[..., 0] * 200 + direction[..., 1] * 200 * 200 + direction[..., 2]
