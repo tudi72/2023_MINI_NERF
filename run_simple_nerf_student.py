@@ -42,7 +42,6 @@ from run_nerf_helpers import *
 from load_blender import load_blender_data
 
 
-
 def create_pointcloud(N, min_val, max_val):
     '''
     N - number of points along the axis
@@ -229,31 +228,29 @@ def regularize_rgb_sigma(iteration,point_cloud_indices, rgb_values, sigma_values
         
         # 1. [regularize]: sample subset of size M
         K = point_cloud_indices.shape[0]
-        M =  10_000                                                                                             # M      <-- size of cloudpoint subset
+        M =  100_000                                                                                             # M      <-- size of cloudpoint subset
         subset    = torch.randint(low = 1,high = K-1,size=(M,1))                                                 # subset <-- random indexes  
         
-        # 1.2 all directions generated for an index
-        direction = torch.randint(-1, 2, (M, 3), dtype=torch.long)
-        # direction = torch.cartesian_prod(torch.tensor([-1, 0, 1]), torch.tensor([-1, 0, 1]), torch.tensor([-1, 0, 1]))
+        # 1.1 [regularize]: generate all neighbors
+        direction = torch.cartesian_prod(torch.tensor([-1, 0, 1]), torch.tensor([-1, 0, 1]), torch.tensor([-1, 0, 1]))
+        direction = direction[(direction != 0).any(dim=1)]
         
-        # 1.3 exclude the position of the pixel itself
-        # direction = direction[(direction != 0).any(dim=1)]
-
-        # 1.4 directions (i,j,k) ---> K domain 
+        # 1.2 [regularize] from (i,j,k) ---> K
         direction =    direction[..., 0] * 200 + direction[..., 1] * 200 * 200 + direction[..., 2]
         
-        # 2 [regularize]: neighbors receive sum of pixel and direction (index + direction to next)
-        # adj    <-- subset + 1 (adjacent neighbors k+1) 
-        adj = subset + direction              
-
-        # adj    <-- adj [0,K] all other values are cut  
+        # 1.3 [regularize]: neighbors receive sum of pixel and direction (index + direction to next) 
+        adj = subset + direction                                                                                # adj    <-- subset + 1 (adjacent neighbors k+1)
         adj = torch.clamp(adj,min=0,max=K-1)  
         
-        # 2 [regularize]: difference c[i,j,k] - c[m,n,p], where m,n,p are all neighbors
-        l2_rgb= torch.mean(torch.sum(torch.square(torch.norm(rgb_values[adj] - rgb_values[subset],dim=2)),dim=1))
+        # 1.4 [regularize]: we take the values of the computed indices for RGB and sigma
+        rgb_DIFF =  rgb_values[adj] - rgb_values[subset]                                                         # rgb subset values
+        sigma_DIFF = sigma_values[adj] - sigma_values[subset]
+        
+        # 2. [regularize]: difference c[i,j,k] - c[m,n,p]
+        l2_rgb= torch.mean(torch.mean(torch.norm(rgb_DIFF,dim=2).pow(2),dim=1))
 
-        # 3. [regularize]: differnece theta[i,j,k] - theta[m,n,p]
-        l2_sigma= torch.mean(torch.sum(torch.square(sigma_values[adj] - sigma_values[subset]),dim=1))
+        # 4. [regularize]: differnece theta[i,j,k] - theta[m,n,p]
+        l2_sigma= torch.mean(torch.mean(sigma_DIFF.pow(2),dim=1))
         
         if iteration%1000==0:
             tqdm.write("--" * 70)
@@ -267,16 +264,19 @@ def regularize_rgb_sigma(iteration,point_cloud_indices, rgb_values, sigma_values
 
     return l2_rgb, l2_sigma
 
+    return l2_rgb, l2_sigma
+
 def train():
     K = None
     device = 'cpu'
-
+    loss_values = []
+    loss_values_100 = []
     '''
     Do not change below parameters !!!!!!!!
     '''
     N_rand = 1024 # number of rays that are use during the training, IF YOU DO NOT HAVE ENOUGH RAM YOU CAN DECREASE IT BUT DO NOT NOT FORGET TO INCREASE THE N_iter!!!!
     precrop_frac = 0.9 # do not change
-    start , N_iters = 0, 5_000
+    start , N_iters = 0, 50_000
     N_samples = 200 # numebr of samples along the ray
     precrop_iters = 0
     lrate = 5e-3 # learning rate
@@ -390,12 +390,16 @@ def train():
             loss = img_loss + lambda_rgb*reg_loss_rgb + lambda_sigma*reg_loss_sigma # --> this is the loss we minimize
             psnr = mse2psnr(img_loss)
 
+            # appending loss for visualization
+            loss_values_100.append(loss.item())
+            
             loss.backward()
             optimizer.step()
 
         if i%100==0:
             tqdm.write(f"[TRAIN] Iter: {i} Loss: {loss.item()}  PSNR: {psnr.item()} loss image: {img_loss.item()}")
-
+            loss_values.append(np.mean(loss_values_100))
+            loss_values_100.clear()
 
         if i%1000==0: # 
             '''
@@ -449,7 +453,15 @@ def train():
                 rgbimage8 = to8b(rgb_image.cpu().numpy())
                 filename = os.path.join(save_folder_test_img, '{:03d}.png'.format(j))
                 imageio.imwrite(filename, rgbimage8)
+    return loss_values
 
 if __name__=='__main__':
     # torch.set_default_tensor_type('torch.cuda.FloatTensor') # UNCOMMENT THIS IF YOU NEED TO RUN IT IN GPU
-    train()
+    loss_values = train()
+
+    plt.figure(figsize=(15, 6))  # Adjust the width as needed
+    plt.plot(loss_values, label='Total Loss',color='black')
+    plt.xlabel('Iteration')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.show()
