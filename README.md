@@ -1,6 +1,6 @@
 # NERF
 
-[View Mesh](REAMDE.html)
+[View Mesh][REAMDE.html]
 
 Method for synthesizing novel views of complex scenes by optimizing an underlying continuous volumetric scene function using a sparse set of input
 views. Algorithm represents a scene using a fully-connected (nonconvolutional) deep network, whose input is a single continuous 5D coordinate (spatial location $(x, y, z)$ and viewing direction $(\theta, \phi)$) and whose
