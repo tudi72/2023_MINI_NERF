@@ -264,8 +264,6 @@ def regularize_rgb_sigma(iteration,point_cloud_indices, rgb_values, sigma_values
 
     return l2_rgb, l2_sigma
 
-    return l2_rgb, l2_sigma
-
 def train():
     K = None
     device = 'cpu'
