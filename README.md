@@ -1,6 +1,6 @@
 # NERF
 
-[![3D Model](https://gist.github.com/tudi72/2bede8a476c030c7945a4f841f32d297.obj)](https://gist.github.com/tudi72/2bede8a476c030c7945a4f841f32d297.obj)
+<script src="https://gist.github.com/tudi72/2bede8a476c030c7945a4f841f32d297.js"></script>
 
 
 Method for synthesizing novel views of complex scenes by optimizing an underlying continuous volumetric scene function using a sparse set of input
