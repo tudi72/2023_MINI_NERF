@@ -1,6 +1,6 @@
 # NERF
 
-![Code_AUkU1CPioc](https://media.github.unibe.ch/user/294/files/e68a44c2-2ec0-4356-9c34-66d88f0dc2fd)
+![chrome_2GNgl4wVbI](https://media.github.unibe.ch/user/294/files/99e6d947-ea12-44e1-8d1f-aa76adf716bd)
 
 
 Method for synthesizing novel views of complex scenes by optimizing an underlying continuous volumetric scene function using a sparse set of input
